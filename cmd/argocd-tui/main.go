@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/Jack200062/ArguTUI/config"
-	"github.com/Jack200062/ArguTUI/internal/transport/client/argocd"
+	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
 	"github.com/Jack200062/ArguTUI/internal/ui/screens/applicationlist"
@@ -21,7 +21,7 @@ func main() {
 
 	cfg, err := config.Init(configPath, logger)
 	if err != nil {
-		logger.Warnf("failed to initialize config: %v", err)
+		logger.Fatal("failed to initialize config: %v", err)
 	} else {
 		logger.Infof("successfully initialized config")
 	}
@@ -45,7 +45,6 @@ func main() {
 	router.AddScreen(appList)
 	tviewApp.SetRoot(appList.Init(), true)
 	if err := tviewApp.Run(); err != nil {
-		logger.Errorf("Error running TUI: %v", err)
-		os.Exit(1)
+		logger.Fatal("failed to run tview app: %v", err)
 	}
 }

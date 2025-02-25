@@ -2,7 +2,6 @@ package argocd
 
 import (
 	"context"
-	"log"
 
 	"github.com/Jack200062/ArguTUI/config"
 	"github.com/Jack200062/ArguTUI/pkg/logging"
@@ -24,7 +23,7 @@ func NewArgoCdClient(cfg *config.Config, l *logging.Logger) *ArgoCdClient {
 	}
 	c, err := apiclient.NewClient(clientOpt)
 	if err != nil {
-		log.Fatalf("Error creating ArgoCD client: %v", err)
+		l.Fatal("Error creating ArgoCD client: %v", err)
 	}
 	return &ArgoCdClient{
 		cfg:    cfg,

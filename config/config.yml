@@ -1,3 +1,0 @@
-argocd:
-  url: "localhost:8080"
-  insecureskipverify: true

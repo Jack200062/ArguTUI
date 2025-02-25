@@ -3,7 +3,7 @@ package applicationlist
 import (
 	"fmt"
 
-	"github.com/Jack200062/ArguTUI/internal/transport/client/argocd"
+	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
 	"github.com/gdamore/tcell/v2"
