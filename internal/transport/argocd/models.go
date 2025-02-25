@@ -5,3 +5,9 @@ type Application struct {
 	Status  string `json:"status"`
 	Project string `json:"project"`
 }
+
+type Resource struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}

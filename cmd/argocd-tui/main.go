@@ -36,14 +36,14 @@ func main() {
 		return
 	}
 
-	// Зачем это?
-
 	instanceInfo := common.NewInstanceInfo(cfg.Argocd.Url, cfg.Argocd.Token)
 	tviewApp := tview.NewApplication()
 	router := ui.NewRouter(tviewApp)
-	appList := applicationlist.New(tviewApp, instanceInfo, apps)
+
+	appList := applicationlist.New(tviewApp, argocdClient, router, instanceInfo, apps)
 	router.AddScreen(appList)
-	tviewApp.SetRoot(appList.Init(), true)
+
+	router.SwitchTo(appList.Name())
 	if err := tviewApp.Run(); err != nil {
 		logger.Fatal("failed to run tview app: %v", err)
 	}

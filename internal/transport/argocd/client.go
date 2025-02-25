@@ -53,3 +53,27 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 	}
 	return apps, nil
 }
+
+func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
+	_, appClient, err := a.client.NewApplicationClient()
+	if err != nil {
+		return nil, a.logger.Errorf("Error getting application client: %v", err)
+	}
+	ctx := context.Background()
+	resList, err := appClient.ManagedResources(ctx, &application.ResourcesQuery{
+		ApplicationName: &appName,
+	})
+	if err != nil {
+		return nil, a.logger.Errorf("Error getting resources for app %s: %v", appName, err)
+	}
+
+	var resources []Resource
+	for _, res := range resList.Items {
+		resources = append(resources, Resource{
+			Kind:      res.Kind,
+			Name:      res.Name,
+			Namespace: res.Namespace,
+		})
+	}
+	return resources, nil
+}
