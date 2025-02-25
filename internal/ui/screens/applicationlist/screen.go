@@ -37,11 +37,11 @@ func (s *ScreenAppList) Init() tview.Primitive {
 
 	// Левая панель с информацией об ArgoCD инстансе.
 	instanceBox := tview.NewTextView().
-		SetText(s.instanceInfo.String()).
-		SetBorder(true).
-		SetTitle("Instance Info")
+		SetText(s.instanceInfo.String())
+	instanceBox.Box.SetBorder(true)
+	instanceBox.Box.SetTitle(" ArgoCD Instance ")
 
-		// Таблица для списка приложений.
+	// Таблица для списка приложений.
 	table := tview.NewTable().
 		SetBorders(false).
 		SetSelectable(true, false)
