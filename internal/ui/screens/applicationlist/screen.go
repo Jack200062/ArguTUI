@@ -35,45 +35,54 @@ func New(app *tview.Application, c *argocd.ArgoCdClient, r *ui.Router, instanceI
 }
 
 func (s *ScreenAppList) Init() tview.Primitive {
-	// 1. Top bar with shortcuts
-	topBar := tview.NewTextView().
-		SetText(" <TAB> Switch Panel   q Quit   d Details ").
-		SetTextAlign(tview.AlignLeft)
+	shortCutInfo := tview.NewTextView().
+		SetText(" <TAB> Switch Panel   q Quit   d Details b Go back ").
+		SetTextAlign(tview.AlignCenter)
 
-	// 2. Box with ArgoCD instance info
 	instanceBox := tview.NewTextView().
 		SetText(s.instanceInfo.String()).
 		SetTextAlign(tview.AlignLeft)
-	instanceBox.SetBorder(true).
-		SetTitle(" ArgoCD Instance ")
+	instanceBox.SetBorder(false)
+	instanceBox.SetScrollable(true)
 
-	// 3. Initialize the table (without chaining .SetBorder)
 	table := tview.NewTable().
-		SetBorders(false).         // No cell borders inside the table
-		SetSelectable(true, false) // Select rows, not columns
-
-	// Now set border on the Box field:
+		SetBorders(false).
+		SetSelectable(true, false)
 	table.Box.SetBorder(true).
 		SetTitle(" ArgoCD Applications ")
 	s.table = table
 
-	// 4. Suppose we have 3 columns: Name, Status, Project
-	//    We'll expand them equally using TableCell.SetExpansion(1).
+	topBar := tview.NewFlex().
+		SetDirection(tview.FlexColumn).
+		AddItem(instanceBox, 0, 1, false).
+		AddItem(shortCutInfo, 0, 1, false)
+
 	headers := []string{"Name", "Status", "Project"}
 	for col, h := range headers {
 		headerCell := tview.NewTableCell(fmt.Sprintf("[::b]%s", h)).
 			SetTextColor(tcell.ColorYellow).
 			SetSelectable(false).
-			SetExpansion(1) // This cell expands horizontally
+			SetExpansion(1)
 		s.table.SetCell(0, col, headerCell)
 	}
 
-	// Fill data rows, also using .SetExpansion(1) on each cell
 	row := 1
 	for _, app := range s.apps {
 		nameCell := tview.NewTableCell(app.Name).SetExpansion(1)
 		statusCell := tview.NewTableCell(app.Status).SetExpansion(1)
 		projectCell := tview.NewTableCell(app.Project).SetExpansion(1)
+
+		if app.Status == "Healthy" {
+			statusCell.SetTextColor(tcell.ColorGreen)
+		} else if app.Status == "Progressing" {
+			statusCell.SetTextColor(tcell.ColorOrange)
+		} else if app.Status == "Suspended" {
+			statusCell.SetTextColor(tcell.ColorBlue)
+		} else if app.Status == "Missing" {
+			statusCell.SetTextColor(tcell.ColorGrey)
+		} else if app.Status == "Degraded" {
+			statusCell.SetTextColor(tcell.ColorRed)
+		}
 
 		s.table.SetCell(row, 0, nameCell)
 		s.table.SetCell(row, 1, statusCell)
@@ -81,50 +90,42 @@ func (s *ScreenAppList) Init() tview.Primitive {
 		row++
 	}
 
-	// 5. Use a grid to place topBar, instanceBox (left) and table (right/below)
+	// 4. Новая конфигурация сетки
 	s.grid = tview.NewGrid().
-		SetRows(1, 0).     // row0 = topBar, row1 = the rest
-		SetColumns(30, 0). // col0 = instanceBox (width=30), col1 = table (expand)
+		SetRows(3, 0). // Строка 0: шорткаты (высота 1), Строка 1: instanceBox (высота 3), Строка 2: таблица (оставшееся)
+		SetColumns(0). // Одна колонка на всю ширину
 		SetBorders(true)
 
-	s.grid.AddItem(topBar, 0, 0, 1, 2, 0, 0, false).
-		AddItem(instanceBox, 1, 0, 1, 1, 0, 0, false).
-		AddItem(s.table, 1, 1, 1, 1, 0, 0, true)
+	s.grid.AddItem(topBar, 0, 0, 1, 1, 0, 0, false). // Шорткаты вврху
+								AddItem(s.table, 1, 0, 1, 1, 0, 0, true) // Таблица внизу
 
-	// 6. Global key handling
+	// 5. Обработка клавиш (без изменений)
 	s.grid.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Rune() {
 		case 'q':
 			s.app.Stop()
 			return nil
 		case 'd':
-			// Additional handling for 'd', if needed.
+			// Дополнительная обработка для 'd', если нужно
 		}
 		if event.Key() == tcell.KeyEnter {
-			// Get the currently selected row.
 			row, _ := s.table.GetSelection()
 			if row < 1 || row-1 >= len(s.apps) {
-				return event // No valid selection.
+				return event
 			}
 			selectedApp := s.apps[row-1]
-			// Fetch resources for the selected application.
 			resources, err := s.client.GetAppResources(selectedApp.Name)
 			if err != nil {
-				// Создаем модальное окно ошибки. !!! Make more smooth
 				modal := tview.NewModal().
 					SetText(fmt.Sprintf("Error getting resources for app %s:\n\n%v", selectedApp.Name, err)).
 					AddButtons([]string{"OK"}).
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-						// После нажатия "OK" возвращаемся к текущему экрану.
 						s.app.SetRoot(s.grid, true)
 					})
-				// Показываем модальное окно.
 				s.app.SetRoot(modal, true)
 				return nil
 			}
-			// Create the new screen for displaying resources.
 			resScreen := applicationResourcesList.New(s.app, resources, selectedApp.Name, s.router)
-			// Switch to the new screen.
 			s.router.AddScreen(resScreen)
 			s.router.SwitchTo(resScreen.Name())
 			return nil

@@ -35,7 +35,7 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 		SetTextAlign(tview.AlignLeft)
 
 	// 3. Initialize the table (without chaining .SetBorder)
-	resourcesBoxTitle := fmt.Sprintf("Resources %s", s.appName)
+	resourcesBoxTitle := fmt.Sprintf(" Resources %s app ", s.appName)
 	s.table = tview.NewTable().
 		SetSelectable(true, false).
 		SetBorders(false)

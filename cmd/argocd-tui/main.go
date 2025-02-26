@@ -36,7 +36,7 @@ func main() {
 		return
 	}
 
-	instanceInfo := common.NewInstanceInfo(cfg.Argocd.Url, cfg.Argocd.Token)
+	instanceInfo := common.NewInstanceInfo(cfg.Argocd.Url)
 	tviewApp := tview.NewApplication()
 	router := ui.NewRouter(tviewApp)
 
