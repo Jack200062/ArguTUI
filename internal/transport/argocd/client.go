@@ -13,9 +13,10 @@ type ArgoCdClient struct {
 	cfg    *config.Config
 	client apiclient.Client
 	logger *logging.Logger
+	ctx    context.Context
 }
 
-func NewArgoCdClient(cfg *config.Config, l *logging.Logger) *ArgoCdClient {
+func NewArgoCdClient(cfg *config.Config, l *logging.Logger, ctx context.Context) *ArgoCdClient {
 	clientOpt := &apiclient.ClientOptions{
 		Insecure:   cfg.Argocd.InsecureSkipVerify,
 		ServerAddr: cfg.Argocd.Url,
@@ -29,18 +30,18 @@ func NewArgoCdClient(cfg *config.Config, l *logging.Logger) *ArgoCdClient {
 		cfg:    cfg,
 		client: c,
 		logger: l,
+		ctx:    ctx,
 	}
 }
 
 func (a *ArgoCdClient) GetApps() ([]Application, error) {
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
-		return nil, a.logger.Errorf("Error getting applications: %v", err)
+		return nil, a.logger.Errorf("Ошибка получения клиента приложений: %v", err)
 	}
-	ctx := context.Background()
-	appList, err := appClient.List(ctx, &application.ApplicationQuery{})
+	appList, err := appClient.List(a.ctx, &application.ApplicationQuery{})
 	if err != nil {
-		return nil, a.logger.Errorf("Error listing applications: %v", err)
+		return nil, a.logger.Errorf("Ошибка получения списка приложений: %v", err)
 	}
 
 	var apps []Application
@@ -59,8 +60,7 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 	if err != nil {
 		return nil, a.logger.Errorf("Error getting application client: %v", err)
 	}
-	ctx := context.Background()
-	resList, err := appClient.ManagedResources(ctx, &application.ResourcesQuery{
+	resList, err := appClient.ManagedResources(a.ctx, &application.ResourcesQuery{
 		ApplicationName: &appName,
 	})
 	if err != nil {
@@ -84,9 +84,7 @@ func (a *ArgoCdClient) RefreshApp(appName string, refreshType string) error {
 		return a.logger.Errorf("Error getting application client: %v", err)
 	}
 
-	ctx := context.Background()
-
-	_, err = appClient.Get(ctx, &application.ApplicationQuery{
+	_, err = appClient.Get(a.ctx, &application.ApplicationQuery{
 		Name:    &appName,
 		Refresh: &refreshType,
 	})

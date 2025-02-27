@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/Jack200062/ArguTUI/config"
@@ -14,6 +15,10 @@ import (
 
 func main() {
 	logger := logging.NewLogger()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
 		configPath = "config/config.yml"
@@ -21,18 +26,13 @@ func main() {
 
 	cfg, err := config.Init(configPath, logger)
 	if err != nil {
-		logger.Fatal("failed to initialize config: %v", err)
-	} else {
-		logger.Infof("successfully initialized config")
+		logger.Fatal("Не удалось инициализировать конфигурацию: %v", err)
 	}
 
-	argocdClient := argocd.NewArgoCdClient(cfg, logger)
-	/*  ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second) */
-	/* defer cancel() */
-
+	argocdClient := argocd.NewArgoCdClient(cfg, logger, ctx)
 	apps, err := argocdClient.GetApps()
 	if err != nil {
-		logger.Errorf("failed to get applications: %v", err)
+		logger.Errorf("Ошибка получения приложений: %v", err)
 		return
 	}
 
@@ -44,7 +44,13 @@ func main() {
 	router.AddScreen(appList)
 
 	router.SwitchTo(appList.Name())
+
 	if err := tviewApp.Run(); err != nil {
-		logger.Fatal("failed to run tview app: %v", err)
+		logger.Fatal("Ошибка запуска TUI: %v", err)
 	}
+
+	logger.Info("Завершение работы приложения")
+
+	tviewApp.Stop()
+	cancel()
 }
