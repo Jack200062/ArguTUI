@@ -77,3 +77,22 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 	}
 	return resources, nil
 }
+
+func (a *ArgoCdClient) RefreshApp(appName string, refreshType string) error {
+	_, appClient, err := a.client.NewApplicationClient()
+	if err != nil {
+		return a.logger.Errorf("Error getting application client: %v", err)
+	}
+
+	ctx := context.Background()
+
+	_, err = appClient.Get(ctx, &application.ApplicationQuery{
+		Name:    &appName,
+		Refresh: &refreshType,
+	})
+	if err != nil {
+		return a.logger.Errorf("Error refreshing app %s: %v", appName, err)
+	}
+
+	return nil
+}

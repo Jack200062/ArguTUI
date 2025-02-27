@@ -3,6 +3,7 @@ package applicationlist
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
@@ -45,6 +46,8 @@ func New(
 }
 
 func (s *ScreenAppList) Init() tview.Primitive {
+	s.startAutoRefresh()
+
 	// Dedicated shortcut view in different package
 	shortCutInfo := components.ShortcutBar()
 
@@ -52,7 +55,6 @@ func (s *ScreenAppList) Init() tview.Primitive {
 		SetText(s.instanceInfo.String()).
 		SetTextAlign(tview.AlignLeft)
 	instanceBox.SetBorder(false)
-	instanceBox.SetScrollable(true)
 
 	topBar := tview.NewFlex().
 		SetDirection(tview.FlexColumn).
@@ -123,6 +125,37 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	return s.pages
 }
 
+func (s *ScreenAppList) startAutoRefresh() {
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			<-ticker.C
+			s.app.QueueUpdateDraw(func() {
+				newApps, err := s.client.GetApps()
+				if err != nil {
+					// TODO: log error
+					//continue
+				}
+				s.apps = newApps
+				s.filteredApps = newApps
+				s.fillTable(s.filteredApps)
+			})
+		}
+	}()
+}
+
+func (s *ScreenAppList) refreshApps() {
+	newApps, err := s.client.GetApps()
+	if err != nil {
+		return
+	}
+	s.apps = newApps
+	s.filteredApps = newApps
+	s.fillTable(s.filteredApps)
+}
+
 func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 	if s.app.GetFocus() == s.searchBar.InputField {
 		return event
@@ -139,8 +172,29 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		s.showSearchBar()
 		s.app.SetFocus(s.searchBar.InputField)
 		return nil
-	case 'd':
-		// Обработка для 'd', если нужно
+	case 'R':
+		s.refreshApps()
+		return nil
+	case 'r':
+		row, _ := s.table.GetSelection()
+		if row < 1 || row-1 >= len(s.filteredApps) {
+			return event
+		}
+		selectedApp := s.filteredApps[row-1]
+		err := s.client.RefreshApp(selectedApp.Name, "normal")
+		if err != nil {
+			modal := components.ErrorModal(
+				fmt.Sprintf("Error refreshing app %s:", selectedApp.Name),
+				err.Error(),
+				func() {
+					s.app.SetRoot(s.pages, true)
+				},
+			)
+			s.app.SetRoot(modal, true)
+			return nil
+		}
+		s.showToast(fmt.Sprintf("App %s refreshed successfully!", selectedApp.Name), 2*time.Second)
+		return nil
 	}
 	if event.Key() == tcell.KeyEnter {
 		// При Enter выбираем приложение
@@ -155,7 +209,7 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 				fmt.Sprintf("Error getting resources for app %s:", selectedApp.Name),
 				err.Error(),
 				func() {
-					s.app.SetRoot(s.grid, true)
+					s.app.SetRoot(s.pages, true)
 				},
 			)
 			s.app.SetRoot(modal, true)
@@ -175,6 +229,30 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 	return event
+}
+
+// Didn't make it using textView, text didn't show for some reason
+func (s *ScreenAppList) showToast(message string, duration time.Duration) {
+	var toast *components.SearchBar
+	s.grid.RemoveItem(s.table)
+
+	s.grid.SetRows(3, 1, -1)
+	toast = components.NewSearchBar("✅  ", 0)
+	toast.InputField.
+		SetText(message)
+	s.grid.AddItem(toast.InputField, 1, 0, 1, 1, 0, 0, false).
+		AddItem(s.table, 2, 0, 1, 1, 0, 0, true)
+
+	go func() {
+		time.Sleep(duration)
+		s.app.QueueUpdateDraw(func() {
+			s.grid.RemoveItem(toast.InputField)
+
+			s.grid.RemoveItem(s.table)
+			s.grid.SetRows(3, 0)
+			s.grid.AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
+		})
+	}()
 }
 
 func (s *ScreenAppList) showSearchBar() {
