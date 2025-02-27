@@ -2,6 +2,7 @@ package applicationResourcesList
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
@@ -11,28 +12,38 @@ import (
 	"github.com/rivo/tview"
 )
 
-type ScreenAppResourcesList struct {
-	app          *tview.Application
-	appName      string
-	resources    []argocd.Resource
-	router       *ui.Router
-	instanceInfo *common.InstanceInfo
+func filterResources(resources []argocd.Resource, query string) []argocd.Resource {
+	var filtered []argocd.Resource
+	lowerQuery := strings.ToLower(query)
+	for _, res := range resources {
+		if strings.Contains(res.SearchString(), lowerQuery) {
+			filtered = append(filtered, res)
+		}
+	}
+	return filtered
+}
 
-	table             *tview.Table
-	grid              *tview.Grid
-	pages             *tview.Pages
-	searchBar         *components.SearchBar
-	filteredResources []argocd.Resource
+type ScreenAppResourcesList struct {
+	app             *tview.Application
+	appName         string
+	resources       []argocd.Resource
+	router          *ui.Router
+	instanceInfo    *common.InstanceInfo
+	table           *tview.Table
+	grid            *tview.Grid
+	pages           *tview.Pages
+	searchBar       *components.SimpleSearchBar
+	filteredResults []argocd.Resource
 }
 
 func New(app *tview.Application, resources []argocd.Resource, appName string, r *ui.Router, instanceInfo *common.InstanceInfo) *ScreenAppResourcesList {
 	return &ScreenAppResourcesList{
-		app:               app,
-		appName:           appName,
-		resources:         resources,
-		router:            r,
-		filteredResources: resources,
-		instanceInfo:      instanceInfo,
+		app:             app,
+		appName:         appName,
+		resources:       resources,
+		filteredResults: resources,
+		router:          r,
+		instanceInfo:    instanceInfo,
 	}
 }
 
@@ -50,72 +61,57 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 		AddItem(instanceBox, 0, 1, false).
 		AddItem(shortCutInfo, 0, 1, false)
 
-	resourcesBoxTitle := fmt.Sprintf(" Resources %s app ", s.appName)
+	resourcesBoxTitle := fmt.Sprintf(" Resources for %s ", s.appName)
 	s.table = tview.NewTable().
 		SetSelectable(true, false).
 		SetBorders(false)
 	s.table.Box.SetBorder(true)
 	s.table.Box.SetTitle(resourcesBoxTitle)
 
-	s.searchBar = components.NewSearchBar("=> ", 0)
-	s.searchBar.Filter = func(query string) []interface{} {
-		var items []interface{}
-		for _, resource := range s.resources {
-			items = append(items, resource)
-		}
-		indices := components.FuzzyFilter(query, items)
-		filtered := make([]interface{}, len(indices))
-		for i, idx := range indices {
-			filtered[i] = s.resources[idx]
-		}
-		return filtered
-	}
-	s.searchBar.OnDone = func(filtered []interface{}) {
-		if filtered == nil {
-			s.filteredResources = s.resources
-		} else {
-			s.filteredResources = make([]argocd.Resource, len(filtered))
-			for i, item := range filtered {
-				s.filteredResources[i] = item.(argocd.Resource)
-			}
-		}
-		s.fillTable(s.filteredResources)
-		s.hideSearchBar()
-		s.app.SetFocus(s.table)
-	}
+	s.searchBar = components.NewSimpleSearchBar("=> ", 20)
+	s.searchBar.InputField.SetDoneFunc(s.searchDone)
+
+	s.fillTable(s.filteredResults)
 
 	s.grid = tview.NewGrid().
 		SetRows(3, 0).
 		SetColumns(0).
 		SetBorders(true)
-
 	s.grid.AddItem(topBar, 0, 0, 1, 1, 0, 0, false).
 		AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
-
-	s.fillTable(s.filteredResources)
 
 	s.pages = tview.NewPages().
 		AddPage("main", s.grid, true, true)
 
 	helpView := components.NewHelpView()
-	helpView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Rune() {
-		case 'q':
-			s.pages.HidePage("help")
-			s.app.SetFocus(s.grid)
-			return nil
-		}
-		return event
-	})
-
+	helpView.SetInputCapture(s.helpKeyHandler)
 	s.pages.AddPage("help", helpView, true, false)
 
-	s.grid.SetInputCapture(s.onGridKey)
+	s.grid.SetInputCapture(s.globalKeyHandler)
 
 	return s.pages
 }
 
-func (s *ScreenAppResourcesList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
+func (s *ScreenAppResourcesList) searchDone(key tcell.Key) {
+	if key == tcell.KeyEnter {
+		query := s.searchBar.InputField.GetText()
+		s.filteredResults = filterResources(s.resources, query)
+		s.fillTable(s.filteredResults)
+		s.hideSearchBar()
+		s.app.SetFocus(s.table)
+	}
+}
+
+func (s *ScreenAppResourcesList) helpKeyHandler(event *tcell.EventKey) *tcell.EventKey {
+	if event.Rune() == 'q' {
+		s.pages.HidePage("help")
+		s.app.SetFocus(s.grid)
+		return nil
+	}
+	return event
+}
+
+func (s *ScreenAppResourcesList) globalKeyHandler(event *tcell.EventKey) *tcell.EventKey {
 	if s.app.GetFocus() == s.searchBar.InputField {
 		return event
 	}
@@ -139,7 +135,7 @@ func (s *ScreenAppResourcesList) onGridKey(event *tcell.EventKey) *tcell.EventKe
 }
 
 func (s *ScreenAppResourcesList) showSearchBar() {
-	s.filteredResources = s.resources
+	s.filteredResults = s.resources
 	s.fillTable(s.resources)
 	s.searchBar.InputField.SetText("")
 	s.grid.RemoveItem(s.table)
@@ -167,7 +163,6 @@ func (s *ScreenAppResourcesList) fillTable(resources []argocd.Resource) {
 			SetExpansion(1)
 		s.table.SetCell(0, col, cell)
 	}
-
 	row := 1
 	for _, res := range resources {
 		s.table.SetCell(row, 0, tview.NewTableCell(res.Kind).SetExpansion(1))

@@ -14,6 +14,17 @@ import (
 	"github.com/rivo/tview"
 )
 
+func filterApplications(apps []argocd.Application, query string) []argocd.Application {
+	var filtered []argocd.Application
+	lowerQuery := strings.ToLower(query)
+	for _, app := range apps {
+		if strings.Contains(app.SearchString(), lowerQuery) {
+			filtered = append(filtered, app)
+		}
+	}
+	return filtered
+}
+
 type ScreenAppList struct {
 	app          *tview.Application
 	instanceInfo *common.InstanceInfo
@@ -24,7 +35,7 @@ type ScreenAppList struct {
 	grid         *tview.Grid
 	table        *tview.Table
 	pages        *tview.Pages
-	searchBar    *components.SearchBar
+	searchBar    *components.SimpleSearchBar
 	filteredApps []argocd.Application
 }
 
@@ -48,7 +59,6 @@ func New(
 func (s *ScreenAppList) Init() tview.Primitive {
 	s.startAutoRefresh()
 
-	// Dedicated shortcut view in different package
 	shortCutInfo := components.ShortcutBar()
 
 	instanceBox := tview.NewTextView().
@@ -61,37 +71,12 @@ func (s *ScreenAppList) Init() tview.Primitive {
 		AddItem(instanceBox, 0, 1, false).
 		AddItem(shortCutInfo, 0, 1, false)
 
-	s.searchBar = components.NewSearchBar("=> ", 0)
-	s.searchBar.Filter = func(query string) []interface{} {
-		var items []interface{}
-		for _, app := range s.apps {
-			items = append(items, app)
-		}
-		indices := components.FuzzyFilter(query, items)
-		filtered := make([]interface{}, len(indices))
-		for i, idx := range indices {
-			filtered[i] = s.apps[idx]
-		}
-		return filtered
-	}
-	s.searchBar.OnDone = func(filtered []interface{}) {
-		if filtered == nil {
-			s.filteredApps = s.apps
-		} else {
-			s.filteredApps = make([]argocd.Application, len(filtered))
-			for i, item := range filtered {
-				s.filteredApps[i] = item.(argocd.Application)
-			}
-		}
-		s.fillTable(s.filteredApps)
-		s.hideSearchBar()
-		s.app.SetFocus(s.table)
-	}
+	s.searchBar = components.NewSimpleSearchBar("=> ", 20)
+	s.searchBar.InputField.SetDoneFunc(s.searchDone)
 
 	s.table = tview.NewTable().
 		SetBorders(false).
 		SetSelectable(true, false)
-		// Set title without borders
 	s.table.SetBorder(true).SetTitle(" ArgoCD Applications ")
 
 	s.fillTable(s.filteredApps)
@@ -100,7 +85,6 @@ func (s *ScreenAppList) Init() tview.Primitive {
 		SetRows(3, 0).
 		SetColumns(0).
 		SetBorders(true)
-
 	s.grid.AddItem(topBar, 0, 0, 1, 1, 0, 0, false).
 		AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
 
@@ -108,16 +92,7 @@ func (s *ScreenAppList) Init() tview.Primitive {
 		AddPage("main", s.grid, true, true)
 
 	helpView := components.NewHelpView()
-	helpView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Rune() {
-		case 'q':
-			s.pages.HidePage("help")
-			s.app.SetFocus(s.grid)
-			return nil
-		}
-		return event
-	})
-
+	helpView.SetInputCapture(s.helpInputCapture)
 	s.pages.AddPage("help", helpView, true, false)
 
 	s.grid.SetInputCapture(s.onGridKey)
@@ -125,18 +100,36 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	return s.pages
 }
 
+func (s *ScreenAppList) searchDone(key tcell.Key) {
+	if key == tcell.KeyEnter {
+		query := s.searchBar.InputField.GetText()
+		s.filteredApps = filterApplications(s.apps, query)
+		s.fillTable(s.filteredApps)
+		s.hideSearchBar()
+		s.app.SetFocus(s.table)
+	}
+}
+
+func (s *ScreenAppList) helpInputCapture(event *tcell.EventKey) *tcell.EventKey {
+	if event.Rune() == 'q' {
+		s.pages.HidePage("help")
+		s.app.SetFocus(s.grid)
+		return nil
+	}
+	return event
+}
+
 func (s *ScreenAppList) startAutoRefresh() {
 	go func() {
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
-
 		for {
 			<-ticker.C
 			s.app.QueueUpdateDraw(func() {
 				newApps, err := s.client.GetApps()
 				if err != nil {
-					// TODO: log error
-					//continue
+					// Здесь можно добавить логирование ошибки.
+					return
 				}
 				s.apps = newApps
 				s.filteredApps = newApps
@@ -186,9 +179,7 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 			modal := components.ErrorModal(
 				fmt.Sprintf("Error refreshing app %s:", selectedApp.Name),
 				err.Error(),
-				func() {
-					s.app.SetRoot(s.pages, true)
-				},
+				s.modalClose,
 			)
 			s.app.SetRoot(modal, true)
 			return nil
@@ -197,7 +188,6 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 	if event.Key() == tcell.KeyEnter {
-		// При Enter выбираем приложение
 		row, _ := s.table.GetSelection()
 		if row < 1 || row-1 >= len(s.filteredApps) {
 			return event
@@ -208,9 +198,7 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 			modal := components.ErrorModal(
 				fmt.Sprintf("Error getting resources for app %s:", selectedApp.Name),
 				err.Error(),
-				func() {
-					s.app.SetRoot(s.pages, true)
-				},
+				s.modalClose,
 			)
 			s.app.SetRoot(modal, true)
 			return nil
@@ -231,23 +219,22 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 	return event
 }
 
-// Didn't make it using textView, text didn't show for some reason
-func (s *ScreenAppList) showToast(message string, duration time.Duration) {
-	var toast *components.SearchBar
-	s.grid.RemoveItem(s.table)
+func (s *ScreenAppList) modalClose() {
+	s.app.SetRoot(s.pages, true)
+}
 
+func (s *ScreenAppList) showToast(message string, duration time.Duration) {
+	var toast *components.SimpleSearchBar
+	s.grid.RemoveItem(s.table)
 	s.grid.SetRows(3, 1, -1)
-	toast = components.NewSearchBar("✅  ", 0)
-	toast.InputField.
-		SetText(message)
+	toast = components.NewSimpleSearchBar("✅  ", 0)
+	toast.InputField.SetText(message)
 	s.grid.AddItem(toast.InputField, 1, 0, 1, 1, 0, 0, false).
 		AddItem(s.table, 2, 0, 1, 1, 0, 0, true)
-
 	go func() {
 		time.Sleep(duration)
 		s.app.QueueUpdateDraw(func() {
 			s.grid.RemoveItem(toast.InputField)
-
 			s.grid.RemoveItem(s.table)
 			s.grid.SetRows(3, 0)
 			s.grid.AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
@@ -277,7 +264,6 @@ func (s *ScreenAppList) hideSearchBar() {
 
 func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 	s.table.Clear()
-
 	headers := []string{"Name", "Status", "Project"}
 	for col, h := range headers {
 		headerCell := tview.NewTableCell(fmt.Sprintf("[::b]%s", h)).
@@ -286,13 +272,11 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 			SetExpansion(1)
 		s.table.SetCell(0, col, headerCell)
 	}
-
 	row := 1
 	for _, app := range apps {
 		nameCell := tview.NewTableCell(app.Name).SetExpansion(1)
 		statusCell := tview.NewTableCell(app.Status).SetExpansion(1)
 		projectCell := tview.NewTableCell(app.Project).SetExpansion(1)
-
 		switch strings.ToLower(app.Status) {
 		case "healthy":
 			statusCell.SetTextColor(tcell.ColorGreen)
@@ -305,7 +289,6 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 		case "degraded":
 			statusCell.SetTextColor(tcell.ColorRed)
 		}
-
 		s.table.SetCell(row, 0, nameCell)
 		s.table.SetCell(row, 1, statusCell)
 		s.table.SetCell(row, 2, projectCell)
