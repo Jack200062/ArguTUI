@@ -5,6 +5,7 @@ import (
 
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
+	"github.com/Jack200062/ArguTUI/internal/ui/components"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -15,23 +16,26 @@ type ScreenAppResourcesList struct {
 	resources []argocd.Resource
 	router    *ui.Router
 
-	table *tview.Table
-	grid  *tview.Grid
+	table             *tview.Table
+	grid              *tview.Grid
+	searchBar         *components.SearchBar
+	filteredResources []argocd.Resource
 }
 
 func New(app *tview.Application, resources []argocd.Resource, appName string, r *ui.Router) *ScreenAppResourcesList {
 	return &ScreenAppResourcesList{
-		app:       app,
-		appName:   appName,
-		resources: resources,
-		router:    r,
+		app:               app,
+		appName:           appName,
+		resources:         resources,
+		router:            r,
+		filteredResources: resources,
 	}
 }
 
 func (s *ScreenAppResourcesList) Init() tview.Primitive {
 	// 1. Top bar with shortcuts
 	topBar := tview.NewTextView().
-		SetText(" <TAB> Switch Panel   q Quit   d Details ").
+		SetText(" <TAB> Switch Panel   q Quit   d Details   b Go back").
 		SetTextAlign(tview.AlignLeft)
 
 	// 3. Initialize the table (without chaining .SetBorder)
@@ -40,8 +44,91 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 		SetSelectable(true, false).
 		SetBorders(false)
 	s.table.Box.SetBorder(true)
-	s.table.Box.SetTitle(resourcesBoxTitle) // Select rows, not columns
+	s.table.Box.SetTitle(resourcesBoxTitle)
 
+	s.searchBar = components.NewSearchBar("=> ", 0)
+	s.searchBar.Filter = func(query string) []interface{} {
+		var items []interface{}
+		for _, resource := range s.resources {
+			items = append(items, resource)
+		}
+		indices := components.FuzzyFilter(query, items)
+		filtered := make([]interface{}, len(indices))
+		for i, idx := range indices {
+			filtered[i] = s.resources[idx]
+		}
+		return filtered
+	}
+	s.searchBar.OnDone = func(filtered []interface{}) {
+		if filtered == nil {
+			s.filteredResources = s.resources
+		} else {
+			s.filteredResources = make([]argocd.Resource, len(filtered))
+			for i, item := range filtered {
+				s.filteredResources[i] = item.(argocd.Resource)
+			}
+		}
+		s.fillTable(s.filteredResources)
+		s.hideSearchBar()
+		s.app.SetFocus(s.table)
+	}
+
+	s.grid = tview.NewGrid().
+		SetRows(3, 0).
+		SetColumns(0).
+		SetBorders(true)
+
+	s.grid.AddItem(topBar, 0, 0, 1, 1, 0, 0, false).
+		AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
+
+	s.fillTable(s.filteredResources)
+
+	s.grid.SetInputCapture(s.onGridKey)
+
+	return s.grid
+}
+
+func (s *ScreenAppResourcesList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
+	if s.app.GetFocus() == s.searchBar.InputField {
+		return event
+	}
+	switch event.Rune() {
+	case 'q':
+		s.app.Stop()
+		return nil
+	case '/', ':':
+		s.showSearchBar()
+		s.app.SetFocus(s.searchBar.InputField)
+		return nil
+	case 'b':
+		s.router.Back()
+		return nil
+	}
+	return event
+}
+
+func (s *ScreenAppResourcesList) showSearchBar() {
+	s.filteredResources = s.resources
+	s.fillTable(s.resources)
+	s.searchBar.InputField.SetText("")
+	s.grid.RemoveItem(s.table)
+	s.grid.SetRows(3, 1, -1)
+	s.grid.AddItem(s.searchBar.InputField, 1, 0, 1, 1, 0, 0, false).
+		AddItem(s.table, 2, 0, 1, 1, 0, 0, true)
+	s.app.SetFocus(s.searchBar.InputField)
+}
+
+func (s *ScreenAppResourcesList) hideSearchBar() {
+	s.grid.RemoveItem(s.searchBar.InputField)
+	s.grid.RemoveItem(s.table)
+	s.grid.SetRows(3, -1)
+	s.grid.AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
+	s.searchBar.InputField.SetText("")
+	s.app.SetFocus(s.table)
+}
+
+func (s *ScreenAppResourcesList) fillTable(resources []argocd.Resource) {
+	s.table.Clear()
 	headers := []string{"Kind", "Name", "Namespace"}
 	for col, header := range headers {
 		cell := tview.NewTableCell(fmt.Sprintf("[yellow::b]%s", header)).
@@ -50,7 +137,6 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 		s.table.SetCell(0, col, cell)
 	}
 
-	// Fill data rows, also using .SetExpansion(1) on each cell
 	row := 1
 	for _, res := range s.resources {
 		s.table.SetCell(row, 0, tview.NewTableCell(res.Kind).SetExpansion(1))
@@ -58,30 +144,6 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 		s.table.SetCell(row, 2, tview.NewTableCell(res.Namespace).SetExpansion(1))
 		row++
 	}
-
-	// 5. Use a grid to place topBar, instanceBox (left) and table (right/below)
-	s.grid = tview.NewGrid().
-		SetRows(3, 0). // 3 строки для верхней панели (можно регулировать) и оставшееся пространство для таблицы
-		SetColumns(0).
-		SetBorders(true)
-
-	s.grid.AddItem(topBar, 0, 0, 1, 1, 0, 0, false).
-		AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
-
-		// 6. Global key handling
-	s.grid.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Rune() {
-		case 'b':
-			s.router.Back()
-			return nil
-		case 'q':
-			s.app.Stop()
-			return nil
-		}
-		return event
-	})
-
-	return s.grid
 }
 
 func (s *ScreenAppResourcesList) Name() string {
