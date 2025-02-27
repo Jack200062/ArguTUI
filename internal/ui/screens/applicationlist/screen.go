@@ -22,6 +22,7 @@ type ScreenAppList struct {
 
 	grid         *tview.Grid
 	table        *tview.Table
+	pages        *tview.Pages
 	searchBar    *components.SearchBar
 	filteredApps []argocd.Application
 }
@@ -101,9 +102,25 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	s.grid.AddItem(topBar, 0, 0, 1, 1, 0, 0, false).
 		AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
 
+	s.pages = tview.NewPages().
+		AddPage("main", s.grid, true, true)
+
+	helpView := components.NewHelpView()
+	helpView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Rune() {
+		case 'q':
+			s.pages.HidePage("help")
+			s.app.SetFocus(s.grid)
+			return nil
+		}
+		return event
+	})
+
+	s.pages.AddPage("help", helpView, true, false)
+
 	s.grid.SetInputCapture(s.onGridKey)
 
-	return s.grid
+	return s.pages
 }
 
 func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
@@ -111,6 +128,10 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		return event
 	}
 	switch event.Rune() {
+	case '?':
+		s.pages.ShowPage("help")
+		s.app.SetFocus(s.pages)
+		return nil
 	case 'q':
 		s.app.Stop()
 		return nil
@@ -130,13 +151,13 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		selectedApp := s.filteredApps[row-1]
 		resources, err := s.client.GetAppResources(selectedApp.Name)
 		if err != nil {
-			// Dedicated Error modal
-			modal := tview.NewModal().
-				SetText(fmt.Sprintf("Error getting resources for app %s:\n\n%v", selectedApp.Name, err)).
-				AddButtons([]string{"OK"}).
-				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			modal := components.ErrorModal(
+				fmt.Sprintf("Error getting resources for app %s:", selectedApp.Name),
+				err.Error(),
+				func() {
 					s.app.SetRoot(s.grid, true)
-				})
+				},
+			)
 			s.app.SetRoot(modal, true)
 			return nil
 		}
@@ -146,7 +167,6 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 	if event.Key() == tcell.KeyTAB {
-		// Переключение фокуса
 		if s.table.HasFocus() {
 			s.app.SetFocus(s.searchBar.InputField)
 		} else {

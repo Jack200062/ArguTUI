@@ -20,6 +20,7 @@ type ScreenAppResourcesList struct {
 
 	table             *tview.Table
 	grid              *tview.Grid
+	pages             *tview.Pages
 	searchBar         *components.SearchBar
 	filteredResources []argocd.Resource
 }
@@ -93,9 +94,25 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 
 	s.fillTable(s.filteredResources)
 
+	s.pages = tview.NewPages().
+		AddPage("main", s.grid, true, true)
+
+	helpView := components.NewHelpView()
+	helpView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Rune() {
+		case 'q':
+			s.pages.HidePage("help")
+			s.app.SetFocus(s.grid)
+			return nil
+		}
+		return event
+	})
+
+	s.pages.AddPage("help", helpView, true, false)
+
 	s.grid.SetInputCapture(s.onGridKey)
 
-	return s.grid
+	return s.pages
 }
 
 func (s *ScreenAppResourcesList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
@@ -103,6 +120,10 @@ func (s *ScreenAppResourcesList) onGridKey(event *tcell.EventKey) *tcell.EventKe
 		return event
 	}
 	switch event.Rune() {
+	case '?':
+		s.pages.ShowPage("help")
+		s.app.SetFocus(s.pages)
+		return nil
 	case 'q':
 		s.app.Stop()
 		return nil
