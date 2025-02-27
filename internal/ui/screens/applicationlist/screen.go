@@ -45,9 +45,7 @@ func New(
 
 func (s *ScreenAppList) Init() tview.Primitive {
 	// Dedicated shortcut view in different package
-	shortCutInfo := tview.NewTextView().
-		SetText(" <TAB> Switch Panel   q Quit   d Details b Go back ").
-		SetTextAlign(tview.AlignLeft)
+	shortCutInfo := components.ShortcutBar()
 
 	instanceBox := tview.NewTextView().
 		SetText(s.instanceInfo.String()).
@@ -142,7 +140,7 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 			s.app.SetRoot(modal, true)
 			return nil
 		}
-		resScreen := applicationResourcesList.New(s.app, resources, selectedApp.Name, s.router)
+		resScreen := applicationResourcesList.New(s.app, resources, selectedApp.Name, s.router, s.instanceInfo)
 		s.router.AddScreen(resScreen)
 		s.router.SwitchTo(resScreen.Name())
 		return nil

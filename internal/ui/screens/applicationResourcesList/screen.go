@@ -5,16 +5,18 @@ import (
 
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
+	"github.com/Jack200062/ArguTUI/internal/ui/common"
 	"github.com/Jack200062/ArguTUI/internal/ui/components"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
 type ScreenAppResourcesList struct {
-	app       *tview.Application
-	appName   string
-	resources []argocd.Resource
-	router    *ui.Router
+	app          *tview.Application
+	appName      string
+	resources    []argocd.Resource
+	router       *ui.Router
+	instanceInfo *common.InstanceInfo
 
 	table             *tview.Table
 	grid              *tview.Grid
@@ -22,23 +24,31 @@ type ScreenAppResourcesList struct {
 	filteredResources []argocd.Resource
 }
 
-func New(app *tview.Application, resources []argocd.Resource, appName string, r *ui.Router) *ScreenAppResourcesList {
+func New(app *tview.Application, resources []argocd.Resource, appName string, r *ui.Router, instanceInfo *common.InstanceInfo) *ScreenAppResourcesList {
 	return &ScreenAppResourcesList{
 		app:               app,
 		appName:           appName,
 		resources:         resources,
 		router:            r,
 		filteredResources: resources,
+		instanceInfo:      instanceInfo,
 	}
 }
 
 func (s *ScreenAppResourcesList) Init() tview.Primitive {
-	// 1. Top bar with shortcuts
-	topBar := tview.NewTextView().
-		SetText(" <TAB> Switch Panel   q Quit   d Details   b Go back").
-		SetTextAlign(tview.AlignLeft)
+	shortCutInfo := components.ShortcutBar()
 
-	// 3. Initialize the table (without chaining .SetBorder)
+	instanceBox := tview.NewTextView().
+		SetText(s.instanceInfo.String()).
+		SetTextAlign(tview.AlignLeft)
+	instanceBox.SetBorder(false)
+	instanceBox.SetScrollable(true)
+
+	topBar := tview.NewFlex().
+		SetDirection(tview.FlexColumn).
+		AddItem(instanceBox, 0, 1, false).
+		AddItem(shortCutInfo, 0, 1, false)
+
 	resourcesBoxTitle := fmt.Sprintf(" Resources %s app ", s.appName)
 	s.table = tview.NewTable().
 		SetSelectable(true, false).
@@ -138,7 +148,7 @@ func (s *ScreenAppResourcesList) fillTable(resources []argocd.Resource) {
 	}
 
 	row := 1
-	for _, res := range s.resources {
+	for _, res := range resources {
 		s.table.SetCell(row, 0, tview.NewTableCell(res.Kind).SetExpansion(1))
 		s.table.SetCell(row, 1, tview.NewTableCell(res.Name).SetExpansion(1))
 		s.table.SetCell(row, 2, tview.NewTableCell(res.Namespace).SetExpansion(1))
