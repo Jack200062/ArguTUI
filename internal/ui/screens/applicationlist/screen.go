@@ -279,15 +279,25 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 		projectCell := tview.NewTableCell(app.Project).SetExpansion(1)
 		switch strings.ToLower(app.Status) {
 		case "healthy":
+			nameCell.SetTextColor(tcell.ColorGreen)
 			statusCell.SetTextColor(tcell.ColorGreen)
+			projectCell.SetTextColor(tcell.ColorGreen)
 		case "progressing":
+			nameCell.SetTextColor(tcell.ColorOrange)
 			statusCell.SetTextColor(tcell.ColorOrange)
+			projectCell.SetTextColor(tcell.ColorOrange)
 		case "suspended":
+			nameCell.SetTextColor(tcell.ColorBlue)
 			statusCell.SetTextColor(tcell.ColorBlue)
+			projectCell.SetTextColor(tcell.ColorBlue)
 		case "missing":
+			nameCell.SetTextColor(tcell.ColorRed)
 			statusCell.SetTextColor(tcell.ColorGrey)
+			projectCell.SetTextColor(tcell.ColorRed)
 		case "degraded":
+			nameCell.SetTextColor(tcell.ColorRed)
 			statusCell.SetTextColor(tcell.ColorRed)
+			projectCell.SetTextColor(tcell.ColorRed)
 		}
 		s.table.SetCell(row, 0, nameCell)
 		s.table.SetCell(row, 1, statusCell)
