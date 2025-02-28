@@ -128,7 +128,6 @@ func (s *ScreenAppList) startAutoRefresh() {
 			s.app.QueueUpdateDraw(func() {
 				newApps, err := s.client.GetApps()
 				if err != nil {
-					// Здесь можно добавить логирование ошибки.
 					return
 				}
 				s.apps = newApps
