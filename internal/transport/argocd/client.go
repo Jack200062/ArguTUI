@@ -46,16 +46,42 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 
 	var apps []Application
 	for _, app := range appList.Items {
+		var lastActivity string
+		var syncCommit string
+		if app.Status.OperationState != nil {
+			if app.Status.OperationState.SyncResult != nil {
+				syncCommit = app.Status.OperationState.SyncResult.Revision
+			} else {
+				syncCommit = "n/a"
+			}
+			if !app.Status.OperationState.FinishedAt.IsZero() {
+				lastActivity = app.Status.OperationState.FinishedAt.Format("2006-01-02 15:04:05")
+			} else {
+				lastActivity = "n/a"
+			}
+		} else {
+			syncCommit = "n/a"
+			lastActivity = "n/a"
+		}
+
 		apps = append(apps, Application{
-			Name:    app.Name,
-			Status:  string(app.Status.Health.Status),
-			Project: app.Spec.Project,
+			Name:         app.Name,
+			HealthStatus: string(app.Status.Health.Status),
+			SyncStatus:   string(app.Status.Sync.Status),
+			SyncCommit:   syncCommit[0:7],
+			Project:      app.Spec.Project,
+			LastActivity: lastActivity,
 		})
 	}
 	return apps, nil
 }
 
 func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
+	// In case cache is not updated, force refresh
+	err := a.RefreshApp(appName, "hard")
+	if err != nil {
+		return nil, a.logger.Errorf("Error refreshing app %s: %v", appName, err)
+	}
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
 		return nil, a.logger.Errorf("Error getting application client: %v", err)

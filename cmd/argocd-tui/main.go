@@ -33,7 +33,7 @@ func main() {
 	router := ui.NewRouter(tviewApp)
 
 	switchToInstance := func(inst *config.Instance) {
-		instanceInfo := common.NewInstanceInfo(inst.Url)
+		instanceInfo := common.NewInstanceInfo(inst.Url, inst.Name)
 
 		argocdClient := argocd.NewArgoCdClient(inst, logger, ctx)
 

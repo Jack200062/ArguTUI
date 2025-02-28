@@ -1,15 +1,18 @@
 package common
 
 type InstanceInfo struct {
-	URL string
+	URL  string
+	Name string
 }
 
-func NewInstanceInfo(url string) *InstanceInfo {
+func NewInstanceInfo(url, name string) *InstanceInfo {
 	return &InstanceInfo{
-		URL: url,
+		Name: name,
+		URL:  url,
 	}
 }
 
 func (info *InstanceInfo) String() string {
-	return "Argocd Url: " + info.URL
+	return "Url: " + info.URL +
+		"\nName: " + info.Name
 }

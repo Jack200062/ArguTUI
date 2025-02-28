@@ -14,17 +14,6 @@ import (
 	"github.com/rivo/tview"
 )
 
-func filterApplications(apps []argocd.Application, query string) []argocd.Application {
-	var filtered []argocd.Application
-	lowerQuery := strings.ToLower(query)
-	for _, app := range apps {
-		if strings.Contains(app.SearchString(), lowerQuery) {
-			filtered = append(filtered, app)
-		}
-	}
-	return filtered
-}
-
 type ScreenAppList struct {
 	app          *tview.Application
 	instanceInfo *common.InstanceInfo
@@ -71,7 +60,8 @@ func (s *ScreenAppList) Init() tview.Primitive {
 		AddItem(instanceBox, 0, 1, false).
 		AddItem(shortCutInfo, 0, 1, false)
 
-	s.searchBar = components.NewSimpleSearchBar("=> ", 20)
+	s.searchBar = components.NewSimpleSearchBar("=> ", 0)
+	s.initLiveSearch()
 	s.searchBar.InputField.SetDoneFunc(s.searchDone)
 
 	s.table = tview.NewTable().
@@ -110,6 +100,17 @@ func (s *ScreenAppList) searchDone(key tcell.Key) {
 	}
 }
 
+func filterApplications(apps []argocd.Application, query string) []argocd.Application {
+	var filtered []argocd.Application
+	lowerQuery := strings.ToLower(query)
+	for _, app := range apps {
+		if strings.Contains(app.SearchString(), lowerQuery) {
+			filtered = append(filtered, app)
+		}
+	}
+	return filtered
+}
+
 func (s *ScreenAppList) helpInputCapture(event *tcell.EventKey) *tcell.EventKey {
 	if event.Rune() == 'q' {
 		s.pages.HidePage("help")
@@ -131,8 +132,6 @@ func (s *ScreenAppList) startAutoRefresh() {
 					return
 				}
 				s.apps = newApps
-				s.filteredApps = newApps
-				s.fillTable(s.filteredApps)
 			})
 		}
 	}()
@@ -146,6 +145,21 @@ func (s *ScreenAppList) refreshApps() {
 	s.apps = newApps
 	s.filteredApps = newApps
 	s.fillTable(s.filteredApps)
+}
+
+func (s *ScreenAppList) initLiveSearch() {
+	var debounceTimer *time.Timer
+	s.searchBar.InputField.SetChangedFunc(func(text string) {
+		if debounceTimer != nil {
+			debounceTimer.Stop()
+		}
+		debounceTimer = time.AfterFunc(500*time.Millisecond, func() {
+			s.app.QueueUpdateDraw(func() {
+				s.filteredApps = filterApplications(s.apps, text)
+				s.fillTable(s.filteredApps)
+			})
+		})
+	})
 }
 
 func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
@@ -260,13 +274,12 @@ func (s *ScreenAppList) hideSearchBar() {
 	s.grid.RemoveItem(s.table)
 	s.grid.SetRows(3, -1)
 	s.grid.AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
-	s.searchBar.InputField.SetText("")
 	s.app.SetFocus(s.table)
 }
 
 func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 	s.table.Clear()
-	headers := []string{"Name", "Status", "Project"}
+	headers := []string{"Name", "HealthStatus", "SyncStatus", "SyncCommit", "Project", "LastActivity"}
 	for col, h := range headers {
 		headerCell := tview.NewTableCell(fmt.Sprintf("[::b]%s", h)).
 			SetTextColor(tcell.ColorYellow).
@@ -277,33 +290,54 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 	row := 1
 	for _, app := range apps {
 		nameCell := tview.NewTableCell(app.Name).SetExpansion(1)
-		statusCell := tview.NewTableCell(app.Status).SetExpansion(1)
+		healthStatusCell := tview.NewTableCell(app.HealthStatus).SetExpansion(1)
+		syncStatusCell := tview.NewTableCell(app.SyncStatus).SetExpansion(1)
+		syncCommitCell := tview.NewTableCell(app.SyncCommit).SetExpansion(1)
 		projectCell := tview.NewTableCell(app.Project).SetExpansion(1)
-		switch strings.ToLower(app.Status) {
+		lastActivityCell := tview.NewTableCell(app.LastActivity).SetExpansion(1)
+		switch strings.ToLower(app.HealthStatus) {
 		case "healthy":
 			nameCell.SetTextColor(tcell.ColorGreen)
-			statusCell.SetTextColor(tcell.ColorGreen)
+			healthStatusCell.SetTextColor(tcell.ColorGreen)
 			projectCell.SetTextColor(tcell.ColorGreen)
+			syncStatusCell.SetTextColor(tcell.ColorGreen)
+			syncCommitCell.SetTextColor(tcell.ColorGreen)
+			lastActivityCell.SetTextColor(tcell.ColorGreen)
 		case "progressing":
 			nameCell.SetTextColor(tcell.ColorOrange)
-			statusCell.SetTextColor(tcell.ColorOrange)
+			healthStatusCell.SetTextColor(tcell.ColorOrange)
 			projectCell.SetTextColor(tcell.ColorOrange)
+			syncStatusCell.SetTextColor(tcell.ColorOrange)
+			syncCommitCell.SetTextColor(tcell.ColorOrange)
+			lastActivityCell.SetTextColor(tcell.ColorOrange)
 		case "suspended":
 			nameCell.SetTextColor(tcell.ColorBlue)
-			statusCell.SetTextColor(tcell.ColorBlue)
+			healthStatusCell.SetTextColor(tcell.ColorBlue)
 			projectCell.SetTextColor(tcell.ColorBlue)
+			syncStatusCell.SetTextColor(tcell.ColorBlue)
+			syncCommitCell.SetTextColor(tcell.ColorBlue)
+			lastActivityCell.SetTextColor(tcell.ColorBlue)
 		case "missing":
-			nameCell.SetTextColor(tcell.ColorRed)
-			statusCell.SetTextColor(tcell.ColorGrey)
-			projectCell.SetTextColor(tcell.ColorRed)
+			nameCell.SetTextColor(tcell.ColorGrey)
+			healthStatusCell.SetTextColor(tcell.ColorGrey)
+			projectCell.SetTextColor(tcell.ColorGrey)
+			syncStatusCell.SetTextColor(tcell.ColorGrey)
+			syncCommitCell.SetTextColor(tcell.ColorGrey)
+			lastActivityCell.SetTextColor(tcell.ColorGrey)
 		case "degraded":
 			nameCell.SetTextColor(tcell.ColorRed)
-			statusCell.SetTextColor(tcell.ColorRed)
+			healthStatusCell.SetTextColor(tcell.ColorRed)
 			projectCell.SetTextColor(tcell.ColorRed)
+			syncStatusCell.SetTextColor(tcell.ColorRed)
+			syncCommitCell.SetTextColor(tcell.ColorRed)
+			lastActivityCell.SetTextColor(tcell.ColorRed)
 		}
 		s.table.SetCell(row, 0, nameCell)
-		s.table.SetCell(row, 1, statusCell)
-		s.table.SetCell(row, 2, projectCell)
+		s.table.SetCell(row, 1, healthStatusCell)
+		s.table.SetCell(row, 2, syncStatusCell)
+		s.table.SetCell(row, 3, syncCommitCell)
+		s.table.SetCell(row, 4, projectCell)
+		s.table.SetCell(row, 5, lastActivityCell)
 		row++
 	}
 }
