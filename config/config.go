@@ -23,21 +23,14 @@ func Init(configPath string, logger *logging.Logger) (*Config, error) {
 	return c, nil
 }
 
-func loadConfig(config string) (*viper.Viper, error) {
+func loadConfig(configPath string) (*viper.Viper, error) {
 	v := viper.New()
-	v.SetDefault("argocd.url", "localhost:8080")
 
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	if err := v.BindEnv("argocd.token"); err != nil {
-		return nil, err
-	}
-	v.SetConfigFile(config)
+	v.SetConfigFile(configPath)
 	v.AutomaticEnv()
+
 	if err := v.ReadInConfig(); err != nil {
-		var notFoundErr viper.ConfigFileNotFoundError
-		if errors.As(err, &notFoundErr) {
-			return nil, errors.New("config file not found")
-		}
 		return nil, err
 	}
 	return v, nil
@@ -52,11 +45,16 @@ func parseConfig(v *viper.Viper) (*Config, error) {
 }
 
 func validateConfig(c *Config) error {
-	if c.Argocd.Url == "" {
-		return errors.New("argocd url is required")
+	if len(c.Instances) == 0 {
+		return errors.New("no instances provided in config")
 	}
-	if c.Argocd.Token == "" {
-		return errors.New("argocd token is required")
+	for _, inst := range c.Instances {
+		if inst.Url == "" {
+			return errors.New("instance url is required")
+		}
+		if inst.Token == "" {
+			return errors.New("instance token is required")
+		}
 	}
 	return nil
 }

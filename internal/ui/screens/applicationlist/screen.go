@@ -77,7 +77,7 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	s.table = tview.NewTable().
 		SetBorders(false).
 		SetSelectable(true, false)
-	s.table.SetBorder(true).SetTitle(" ArgoCD Applications ")
+	s.table.SetBorder(true).SetTitle(" Applications ")
 
 	s.fillTable(s.filteredApps)
 
@@ -153,6 +153,9 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		return event
 	}
 	switch event.Rune() {
+	case 'I':
+		s.router.SwitchTo("InstanceSelection")
+		return nil
 	case '?':
 		s.pages.ShowPage("help")
 		s.app.SetFocus(s.pages)

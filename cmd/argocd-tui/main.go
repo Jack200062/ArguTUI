@@ -9,13 +9,13 @@ import (
 	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
 	"github.com/Jack200062/ArguTUI/internal/ui/screens/applicationlist"
+	screens "github.com/Jack200062/ArguTUI/internal/ui/screens/instanceSelection"
 	"github.com/Jack200062/ArguTUI/pkg/logging"
 	"github.com/rivo/tview"
 )
 
 func main() {
 	logger := logging.NewLogger()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -29,28 +29,40 @@ func main() {
 		logger.Fatal("Failed to init config: %v", err)
 	}
 
-	argocdClient := argocd.NewArgoCdClient(cfg, logger, ctx)
-	apps, err := argocdClient.GetApps()
-	if err != nil {
-		logger.Errorf("Error getting all applications: %v", err)
-		return
-	}
-
-	instanceInfo := common.NewInstanceInfo(cfg.Argocd.Url)
 	tviewApp := tview.NewApplication()
 	router := ui.NewRouter(tviewApp)
 
-	appList := applicationlist.New(tviewApp, argocdClient, router, instanceInfo, apps)
-	router.AddScreen(appList)
+	switchToInstance := func(inst *config.Instance) {
+		instanceInfo := common.NewInstanceInfo(inst.Url)
 
-	router.SwitchTo(appList.Name())
+		argocdClient := argocd.NewArgoCdClient(inst, logger, ctx)
+
+		apps, err := argocdClient.GetApps()
+		if err != nil {
+			logger.Errorf("Error getting all applications: %v", err)
+			return
+		}
+
+		appList := applicationlist.New(tviewApp, argocdClient, router, instanceInfo, apps)
+		router.AddScreen(appList)
+		router.SwitchTo(appList.Name())
+	}
+
+	if len(cfg.Instances) > 1 {
+		instanceSelection := screens.NewInstanceSelectionScreen(tviewApp, cfg, router, switchToInstance)
+		router.AddScreen(instanceSelection)
+		router.SwitchTo(instanceSelection.Name())
+	} else if len(cfg.Instances) == 1 {
+		switchToInstance(cfg.Instances[0])
+	} else {
+		logger.Fatal("No instances found in config")
+	}
 
 	if err := tviewApp.Run(); err != nil {
 		logger.Fatal("Error running ArguTUI: %v", err)
 	}
 
 	logger.Info("Closing application")
-
 	tviewApp.Stop()
 	cancel()
 }

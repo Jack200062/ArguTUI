@@ -10,17 +10,17 @@ import (
 )
 
 type ArgoCdClient struct {
-	cfg    *config.Config
+	cfg    *config.Instance
 	client apiclient.Client
 	logger *logging.Logger
 	ctx    context.Context
 }
 
-func NewArgoCdClient(cfg *config.Config, l *logging.Logger, ctx context.Context) *ArgoCdClient {
+func NewArgoCdClient(cfg *config.Instance, l *logging.Logger, ctx context.Context) *ArgoCdClient {
 	clientOpt := &apiclient.ClientOptions{
-		Insecure:   cfg.Argocd.InsecureSkipVerify,
-		ServerAddr: cfg.Argocd.Url,
-		AuthToken:  cfg.Argocd.Token,
+		Insecure:   cfg.InsecureSkipVerify,
+		ServerAddr: cfg.Url,
+		AuthToken:  cfg.Token,
 	}
 	c, err := apiclient.NewClient(clientOpt)
 	if err != nil {
@@ -37,11 +37,11 @@ func NewArgoCdClient(cfg *config.Config, l *logging.Logger, ctx context.Context)
 func (a *ArgoCdClient) GetApps() ([]Application, error) {
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
-		return nil, a.logger.Errorf("Ошибка получения клиента приложений: %v", err)
+		return nil, a.logger.Errorf("Error creating argocd client: %v", err)
 	}
 	appList, err := appClient.List(a.ctx, &application.ApplicationQuery{})
 	if err != nil {
-		return nil, a.logger.Errorf("Ошибка получения списка приложений: %v", err)
+		return nil, a.logger.Errorf("Error getting application list: %v", err)
 	}
 
 	var apps []Application

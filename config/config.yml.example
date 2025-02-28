@@ -1,4 +1,10 @@
-argocd:
-  url: "localhost:8080"
-  insecureskipverify: true
-  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcmdvY2QiLCJzdWIiOiJ0ZXN0OmFwaUtleSIsIm5iZiI6MTc0MDQyNTkwOSwiaWF0IjoxNzQwNDI1OTA5LCJqdGkiOiIxOGI0Y2JiOS03NzdkLTQxOTAtODMwYi00NDE3M2RmMGE0ZjgifQ.K3qfX_lfGbZxtx6qEqunuq2wqRxRYaWWDqIrmcw8AyA"
+instances:
+  - name: lab
+    url: "localhost:8080"
+    token: "no-token-needed"
+    insecureskipverify: true
+  - name: production
+    url: "localhost:8081"
+    token: "another-token..."
+    insecureskipverify: true
+

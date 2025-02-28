@@ -1,11 +1,12 @@
 package config
 
-type Config struct {
-	Argocd *ArgocdConfig
+type Instance struct {
+	Name               string `mapstructure:"name"`
+	Url                string `mapstructure:"url"`
+	Token              string `mapstructure:"token"`
+	InsecureSkipVerify bool   `mapstructure:"insecureskipverify"`
 }
 
-type ArgocdConfig struct {
-	Url                string
-	Token              string
-	InsecureSkipVerify bool
+type Config struct {
+	Instances []*Instance `mapstructure:"instances"`
 }
