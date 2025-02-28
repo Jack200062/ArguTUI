@@ -26,13 +26,13 @@ func main() {
 
 	cfg, err := config.Init(configPath, logger)
 	if err != nil {
-		logger.Fatal("Не удалось инициализировать конфигурацию: %v", err)
+		logger.Fatal("Failed to init config: %v", err)
 	}
 
 	argocdClient := argocd.NewArgoCdClient(cfg, logger, ctx)
 	apps, err := argocdClient.GetApps()
 	if err != nil {
-		logger.Errorf("Ошибка получения приложений: %v", err)
+		logger.Errorf("Error getting all applications: %v", err)
 		return
 	}
 
@@ -46,10 +46,10 @@ func main() {
 	router.SwitchTo(appList.Name())
 
 	if err := tviewApp.Run(); err != nil {
-		logger.Fatal("Ошибка запуска TUI: %v", err)
+		logger.Fatal("Error running ArguTUI: %v", err)
 	}
 
-	logger.Info("Завершение работы приложения")
+	logger.Info("Closing application")
 
 	tviewApp.Stop()
 	cancel()
