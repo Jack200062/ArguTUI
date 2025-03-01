@@ -70,7 +70,7 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 			Name:         app.Name,
 			HealthStatus: string(app.Status.Health.Status),
 			SyncStatus:   string(app.Status.Sync.Status),
-			SyncCommit:   syncCommit[0:7],
+			SyncCommit:   syncCommit,
 			Project:      app.Spec.Project,
 			LastActivity: lastActivity,
 		})
