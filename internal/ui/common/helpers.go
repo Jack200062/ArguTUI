@@ -24,10 +24,18 @@ func ColorForHealthStatus(status string) tcell.Color {
 	}
 }
 
+func RowColorForStatuses(healthStatus, syncStatus string) tcell.Color {
+	if strings.ToLower(healthStatus) != "healthy" {
+		return ColorForHealthStatus(healthStatus)
+	} else if strings.ToLower(syncStatus) != "synced" {
+		return tcell.ColorOrange
+	}
+	return ColorForHealthStatus("healthy")
+}
+
 func SetRowColor(table *tview.Table, row, columns int, color tcell.Color) {
 	for col := 0; col < columns; col++ {
-		cell := table.GetCell(row, col)
-		if cell != nil {
+		if cell := table.GetCell(row, col); cell != nil {
 			cell.SetTextColor(color)
 		}
 	}

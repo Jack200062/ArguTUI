@@ -293,6 +293,9 @@ func (s *ScreenAppResourcesList) fillTableNormalMode() {
 		s.table.SetCell(row, 2, tview.NewTableCell(r.HealthStatus).SetExpansion(1))
 		s.table.SetCell(row, 3, tview.NewTableCell(r.SyncStatus).SetExpansion(1))
 		s.table.SetCell(row, 4, tview.NewTableCell(r.Namespace).SetExpansion(1))
+
+		rowColor := common.RowColorForStatuses(r.HealthStatus, r.SyncStatus)
+		common.SetRowColor(s.table, row, len(headers), rowColor)
 		row++
 	}
 }
@@ -322,6 +325,8 @@ func buildTreeFromNodes(nodes []v1alpha1.ResourceNode) []*TreeResource {
 		} else {
 			tr.Health = "Unknown"
 		}
+		// There are no sync status exist to child resources
+		// Thus we set it to "Synced" for now. Don't see any problem with this.
 		tr.SyncStatus = "Synced"
 		resourceMap[n.UID] = tr
 	}
@@ -374,6 +379,10 @@ func (s *ScreenAppResourcesList) fillTableTreeMode() {
 		s.table.SetCell(row, 2, tview.NewTableCell(tr.Health).SetExpansion(1))
 		s.table.SetCell(row, 3, tview.NewTableCell(tr.SyncStatus).SetExpansion(1))
 		s.table.SetCell(row, 4, tview.NewTableCell(tr.Namespace).SetExpansion(1))
+
+		rowColor := common.RowColorForStatuses(tr.Health, tr.SyncStatus)
+		common.SetRowColor(s.table, row, len(headers), rowColor)
+
 		row++
 	}
 }

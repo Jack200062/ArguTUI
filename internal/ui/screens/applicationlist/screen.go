@@ -283,12 +283,11 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 	for _, app := range apps {
 		nameCell := tview.NewTableCell(app.Name).SetExpansion(1)
 		healthStatusCell := tview.NewTableCell(app.HealthStatus).SetExpansion(1)
-		projectCell := tview.NewTableCell(app.Project).SetExpansion(1)
 		syncStatusCell := tview.NewTableCell(app.SyncStatus).SetExpansion(1)
 		syncCommitCell := tview.NewTableCell(app.SyncCommit).SetExpansion(1)
+		projectCell := tview.NewTableCell(app.Project).SetExpansion(1)
 		lastActivityCell := tview.NewTableCell(app.LastActivity).SetExpansion(1)
 
-		// COLOR WITH OR METHOD
 		s.table.SetCell(row, 0, nameCell)
 		s.table.SetCell(row, 1, healthStatusCell)
 		s.table.SetCell(row, 2, syncStatusCell)
@@ -296,8 +295,8 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 		s.table.SetCell(row, 4, projectCell)
 		s.table.SetCell(row, 5, lastActivityCell)
 
-		color := common.ColorForHealthStatus(app.HealthStatus)
-		common.SetRowColor(s.table, row, len(headers), color)
+		rowColor := common.RowColorForStatuses(app.HealthStatus, app.SyncStatus)
+		common.SetRowColor(s.table, row, len(headers), rowColor)
 
 		row++
 	}
