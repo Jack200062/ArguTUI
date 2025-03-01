@@ -8,6 +8,7 @@ import (
 	"github.com/Jack200062/ArguTUI/pkg/logging"
 	"github.com/argoproj/argo-cd/v2/pkg/apiclient"
 	"github.com/argoproj/argo-cd/v2/pkg/apiclient/application"
+	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 )
 
 type ArgoCdClient struct {
@@ -83,9 +84,7 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 		return nil, a.logger.Errorf("Error creating argocd client: %v", err)
 	}
 
-	tree, err := appClient.ResourceTree(a.ctx, &application.ResourcesQuery{
-		ApplicationName: &appName,
-	})
+	tree, err := a.GetResourceTree(appName)
 	if err != nil {
 		return nil, a.logger.Errorf("Error getting resource tree for %s: %v", appName, err)
 	}
@@ -131,6 +130,21 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 	}
 
 	return resources, nil
+}
+
+func (a *ArgoCdClient) GetResourceTree(appName string) (*v1alpha1.ApplicationTree, error) {
+	_, appClient, err := a.client.NewApplicationClient()
+	if err != nil {
+		return nil, a.logger.Errorf("Error creating ArgoCD application client: %v", err)
+	}
+	query := &application.ResourcesQuery{
+		ApplicationName: &appName,
+	}
+	tree, err := appClient.ResourceTree(a.ctx, query)
+	if err != nil {
+		return nil, a.logger.Errorf("Error getting resource tree for %s: %v", appName, err)
+	}
+	return tree, nil
 }
 
 func (a *ArgoCdClient) RefreshApp(appName string, refreshType string) error {

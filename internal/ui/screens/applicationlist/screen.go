@@ -219,7 +219,7 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 			s.app.SetRoot(modal, true)
 			return nil
 		}
-		resScreen := applicationResourcesList.New(s.app, resources, selectedApp.Name, s.router, s.instanceInfo)
+		resScreen := applicationResourcesList.New(s.app, resources, selectedApp.Name, s.router, s.instanceInfo, s.client)
 		s.router.AddScreen(resScreen)
 		s.router.SwitchTo(resScreen.Name())
 		return nil
@@ -288,11 +288,12 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 		syncCommitCell := tview.NewTableCell(app.SyncCommit).SetExpansion(1)
 		lastActivityCell := tview.NewTableCell(app.LastActivity).SetExpansion(1)
 
+		// COLOR WITH OR METHOD
 		s.table.SetCell(row, 0, nameCell)
 		s.table.SetCell(row, 1, healthStatusCell)
-		s.table.SetCell(row, 2, projectCell)
-		s.table.SetCell(row, 3, syncStatusCell)
-		s.table.SetCell(row, 4, syncCommitCell)
+		s.table.SetCell(row, 2, syncStatusCell)
+		s.table.SetCell(row, 3, syncCommitCell)
+		s.table.SetCell(row, 4, projectCell)
 		s.table.SetCell(row, 5, lastActivityCell)
 
 		color := common.ColorForHealthStatus(app.HealthStatus)
