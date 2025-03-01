@@ -224,14 +224,6 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		s.router.SwitchTo(resScreen.Name())
 		return nil
 	}
-	if event.Key() == tcell.KeyTAB {
-		if s.table.HasFocus() {
-			s.app.SetFocus(s.searchBar.InputField)
-		} else {
-			s.app.SetFocus(s.table)
-		}
-		return nil
-	}
 	return event
 }
 

@@ -7,7 +7,7 @@ import (
 
 func ShortcutBar() *tview.TextView {
 	text := tview.NewTextView().
-		SetText(" <TAB> Switch Panel \n  q Quit ? Help \n  d Details  b Go back ").
+		SetText(" q Quit ? Help \n  d Details  b Go back ").
 		SetTextAlign(tview.AlignLeft).
 		SetTextColor(tcell.ColorYellow)
 	return text

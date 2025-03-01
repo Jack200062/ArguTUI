@@ -77,11 +77,6 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 }
 
 func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
-	// In case cache is not updated, force refresh
-	err := a.RefreshApp(appName, "hard")
-	if err != nil {
-		return nil, a.logger.Errorf("Error refreshing app %s: %v", appName, err)
-	}
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
 		return nil, a.logger.Errorf("Error getting application client: %v", err)

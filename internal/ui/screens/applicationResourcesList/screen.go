@@ -120,6 +120,9 @@ func (s *ScreenAppResourcesList) globalKeyHandler(event *tcell.EventKey) *tcell.
 		s.pages.ShowPage("help")
 		s.app.SetFocus(s.pages)
 		return nil
+	case 'I':
+		s.router.SwitchTo("InstanceSelection")
+		return nil
 	case 'q':
 		s.app.Stop()
 		return nil
