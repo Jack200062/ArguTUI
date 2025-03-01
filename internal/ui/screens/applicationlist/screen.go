@@ -269,6 +269,32 @@ func (s *ScreenAppList) hideSearchBar() {
 	s.app.SetFocus(s.table)
 }
 
+func colorForHealthStatus(status string) tcell.Color {
+	switch strings.ToLower(status) {
+	case "healthy":
+		return tcell.ColorGreen
+	case "progressing":
+		return tcell.ColorOrange
+	case "suspended":
+		return tcell.ColorBlue
+	case "missing":
+		return tcell.ColorGrey
+	case "degraded":
+		return tcell.ColorRed
+	default:
+		return tcell.ColorWhite
+	}
+}
+
+func setRowColor(table *tview.Table, row, columns int, color tcell.Color) {
+	for col := 0; col < columns; col++ {
+		cell := table.GetCell(row, col)
+		if cell != nil {
+			cell.SetTextColor(color)
+		}
+	}
+}
+
 func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 	s.table.Clear()
 	headers := []string{"Name", "HealthStatus", "SyncStatus", "SyncCommit", "Project", "LastActivity"}
@@ -283,53 +309,21 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 	for _, app := range apps {
 		nameCell := tview.NewTableCell(app.Name).SetExpansion(1)
 		healthStatusCell := tview.NewTableCell(app.HealthStatus).SetExpansion(1)
+		projectCell := tview.NewTableCell(app.Project).SetExpansion(1)
 		syncStatusCell := tview.NewTableCell(app.SyncStatus).SetExpansion(1)
 		syncCommitCell := tview.NewTableCell(app.SyncCommit).SetExpansion(1)
-		projectCell := tview.NewTableCell(app.Project).SetExpansion(1)
 		lastActivityCell := tview.NewTableCell(app.LastActivity).SetExpansion(1)
-		switch strings.ToLower(app.HealthStatus) {
-		case "healthy":
-			nameCell.SetTextColor(tcell.ColorGreen)
-			healthStatusCell.SetTextColor(tcell.ColorGreen)
-			projectCell.SetTextColor(tcell.ColorGreen)
-			syncStatusCell.SetTextColor(tcell.ColorGreen)
-			syncCommitCell.SetTextColor(tcell.ColorGreen)
-			lastActivityCell.SetTextColor(tcell.ColorGreen)
-		case "progressing":
-			nameCell.SetTextColor(tcell.ColorOrange)
-			healthStatusCell.SetTextColor(tcell.ColorOrange)
-			projectCell.SetTextColor(tcell.ColorOrange)
-			syncStatusCell.SetTextColor(tcell.ColorOrange)
-			syncCommitCell.SetTextColor(tcell.ColorOrange)
-			lastActivityCell.SetTextColor(tcell.ColorOrange)
-		case "suspended":
-			nameCell.SetTextColor(tcell.ColorBlue)
-			healthStatusCell.SetTextColor(tcell.ColorBlue)
-			projectCell.SetTextColor(tcell.ColorBlue)
-			syncStatusCell.SetTextColor(tcell.ColorBlue)
-			syncCommitCell.SetTextColor(tcell.ColorBlue)
-			lastActivityCell.SetTextColor(tcell.ColorBlue)
-		case "missing":
-			nameCell.SetTextColor(tcell.ColorGrey)
-			healthStatusCell.SetTextColor(tcell.ColorGrey)
-			projectCell.SetTextColor(tcell.ColorGrey)
-			syncStatusCell.SetTextColor(tcell.ColorGrey)
-			syncCommitCell.SetTextColor(tcell.ColorGrey)
-			lastActivityCell.SetTextColor(tcell.ColorGrey)
-		case "degraded":
-			nameCell.SetTextColor(tcell.ColorRed)
-			healthStatusCell.SetTextColor(tcell.ColorRed)
-			projectCell.SetTextColor(tcell.ColorRed)
-			syncStatusCell.SetTextColor(tcell.ColorRed)
-			syncCommitCell.SetTextColor(tcell.ColorRed)
-			lastActivityCell.SetTextColor(tcell.ColorRed)
-		}
+
 		s.table.SetCell(row, 0, nameCell)
 		s.table.SetCell(row, 1, healthStatusCell)
-		s.table.SetCell(row, 2, syncStatusCell)
-		s.table.SetCell(row, 3, syncCommitCell)
-		s.table.SetCell(row, 4, projectCell)
+		s.table.SetCell(row, 2, projectCell)
+		s.table.SetCell(row, 3, syncStatusCell)
+		s.table.SetCell(row, 4, syncCommitCell)
 		s.table.SetCell(row, 5, lastActivityCell)
+
+		color := colorForHealthStatus(app.HealthStatus)
+		setRowColor(s.table, row, len(headers), color)
+
 		row++
 	}
 }
