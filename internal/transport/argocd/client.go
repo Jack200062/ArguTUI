@@ -66,6 +66,10 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 			lastActivity = "n/a"
 		}
 
+		if len(syncCommit) > 7 {
+			syncCommit = syncCommit[:7]
+		}
+
 		apps = append(apps, Application{
 			Name:         app.Name,
 			HealthStatus: string(app.Status.Health.Status),
