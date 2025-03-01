@@ -159,7 +159,7 @@ func (s *ScreenAppResourcesList) hideSearchBar() {
 
 func (s *ScreenAppResourcesList) fillTable(resources []argocd.Resource) {
 	s.table.Clear()
-	headers := []string{"Kind", "Name", "Namespace"}
+	headers := []string{"Kind", "Name", "Health", "SyncStatus", "Namespace"}
 	for col, header := range headers {
 		cell := tview.NewTableCell(fmt.Sprintf("[yellow::b]%s", header)).
 			SetSelectable(false).
@@ -168,9 +168,20 @@ func (s *ScreenAppResourcesList) fillTable(resources []argocd.Resource) {
 	}
 	row := 1
 	for _, res := range resources {
-		s.table.SetCell(row, 0, tview.NewTableCell(res.Kind).SetExpansion(1))
-		s.table.SetCell(row, 1, tview.NewTableCell(res.Name).SetExpansion(1))
-		s.table.SetCell(row, 2, tview.NewTableCell(res.Namespace).SetExpansion(1))
+		kindCell := tview.NewTableCell(res.Kind).SetExpansion(1)
+		nameCell := tview.NewTableCell(res.Name).SetExpansion(1)
+		healthStatusCell := tview.NewTableCell(res.HealthStatus).SetExpansion(1)
+		syncStatusCell := tview.NewTableCell(res.SyncStatus).SetExpansion(1)
+		namespaceCell := tview.NewTableCell(res.Namespace).SetExpansion(1)
+		s.table.SetCell(row, 0, kindCell)
+		s.table.SetCell(row, 1, nameCell)
+		s.table.SetCell(row, 2, healthStatusCell)
+		s.table.SetCell(row, 3, syncStatusCell)
+		s.table.SetCell(row, 4, namespaceCell)
+
+		color := common.ColorForHealthStatus(res.HealthStatus)
+		common.SetRowColor(s.table, row, len(headers), color)
+
 		row++
 	}
 }

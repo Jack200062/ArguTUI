@@ -12,9 +12,11 @@ type Application struct {
 }
 
 type Resource struct {
-	Kind      string `json:"kind"`
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
+	Kind         string `json:"kind"`
+	Name         string `json:"name"`
+	HealthStatus string `json:"healthStatus"`
+	SyncStatus   string `json:"syncStatus"`
+	Namespace    string `json:"namespace"`
 }
 
 func (a *Application) SearchString() string {

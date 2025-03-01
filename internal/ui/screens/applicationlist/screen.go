@@ -269,32 +269,6 @@ func (s *ScreenAppList) hideSearchBar() {
 	s.app.SetFocus(s.table)
 }
 
-func colorForHealthStatus(status string) tcell.Color {
-	switch strings.ToLower(status) {
-	case "healthy":
-		return tcell.ColorGreen
-	case "progressing":
-		return tcell.ColorOrange
-	case "suspended":
-		return tcell.ColorBlue
-	case "missing":
-		return tcell.ColorGrey
-	case "degraded":
-		return tcell.ColorRed
-	default:
-		return tcell.ColorWhite
-	}
-}
-
-func setRowColor(table *tview.Table, row, columns int, color tcell.Color) {
-	for col := 0; col < columns; col++ {
-		cell := table.GetCell(row, col)
-		if cell != nil {
-			cell.SetTextColor(color)
-		}
-	}
-}
-
 func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 	s.table.Clear()
 	headers := []string{"Name", "HealthStatus", "SyncStatus", "SyncCommit", "Project", "LastActivity"}
@@ -321,8 +295,8 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 		s.table.SetCell(row, 4, syncCommitCell)
 		s.table.SetCell(row, 5, lastActivityCell)
 
-		color := colorForHealthStatus(app.HealthStatus)
-		setRowColor(s.table, row, len(headers), color)
+		color := common.ColorForHealthStatus(app.HealthStatus)
+		common.SetRowColor(s.table, row, len(headers), color)
 
 		row++
 	}

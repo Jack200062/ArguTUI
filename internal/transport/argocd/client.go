@@ -2,6 +2,7 @@ package argocd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Jack200062/ArguTUI/config"
 	"github.com/Jack200062/ArguTUI/pkg/logging"
@@ -79,23 +80,56 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
-		return nil, a.logger.Errorf("Error getting application client: %v", err)
+		return nil, a.logger.Errorf("Error creating argocd client: %v", err)
 	}
+
+	tree, err := appClient.ResourceTree(a.ctx, &application.ResourcesQuery{
+		ApplicationName: &appName,
+	})
+	if err != nil {
+		return nil, a.logger.Errorf("Error getting resource tree for %s: %v", appName, err)
+	}
+
 	resList, err := appClient.ManagedResources(a.ctx, &application.ResourcesQuery{
 		ApplicationName: &appName,
 	})
 	if err != nil {
-		return nil, a.logger.Errorf("Error getting resources for app %s: %v", appName, err)
+		return nil, a.logger.Errorf("Error getting managed resources for %s: %v", appName, err)
+	}
+
+	healthMap := make(map[string]string)
+	for _, node := range tree.Nodes {
+		key := fmt.Sprintf("%s/%s/%s/%s", node.Group, node.Kind, node.Namespace, node.Name)
+		if node.Health != nil {
+			healthMap[key] = string(node.Health.Status)
+		} else {
+			healthMap[key] = "Unknown"
+		}
 	}
 
 	var resources []Resource
 	for _, res := range resList.Items {
+		key := fmt.Sprintf("%s/%s/%s/%s", res.Group, res.Kind, res.Namespace, res.Name)
+
+		healthStatus, exists := healthMap[key]
+		if !exists {
+			healthStatus = "Unknown"
+		}
+
+		syncStatus := "Synced"
+		if res.Diff != "" {
+			syncStatus = "OutOfSync"
+		}
+
 		resources = append(resources, Resource{
-			Kind:      res.Kind,
-			Name:      res.Name,
-			Namespace: res.Namespace,
+			Kind:         res.Kind,
+			Name:         res.Name,
+			Namespace:    res.Namespace,
+			HealthStatus: healthStatus,
+			SyncStatus:   syncStatus,
 		})
 	}
+
 	return resources, nil
 }
 
