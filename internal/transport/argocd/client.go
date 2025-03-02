@@ -48,22 +48,24 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 
 	var apps []Application
 	for _, app := range appList.Items {
-		var lastActivity string
+		var lastSyncTime string
+
+		if !app.Status.ReconciledAt.IsZero() {
+			lastSyncTime = app.Status.ReconciledAt.Format("2006-01-02 15:04:05")
+		} else if app.Status.OperationState != nil && !app.Status.OperationState.FinishedAt.IsZero() {
+			lastSyncTime = app.Status.OperationState.FinishedAt.Format("2006-01-02 15:04:05")
+		} else if !app.CreationTimestamp.IsZero() {
+			lastSyncTime = app.CreationTimestamp.Format("2006-01-02 15:04:05")
+		} else {
+			lastSyncTime = "n/a"
+		}
+
 		var syncCommit string
-		if app.Status.OperationState != nil {
-			if app.Status.OperationState.SyncResult != nil {
-				syncCommit = app.Status.OperationState.SyncResult.Revision
-			} else {
-				syncCommit = "n/a"
-			}
-			if !app.Status.OperationState.FinishedAt.IsZero() {
-				lastActivity = app.Status.OperationState.FinishedAt.Format("2006-01-02 15:04:05")
-			} else {
-				lastActivity = "n/a"
-			}
+		if app.Status.OperationState != nil &&
+			app.Status.OperationState.SyncResult != nil {
+			syncCommit = app.Status.OperationState.SyncResult.Revision
 		} else {
 			syncCommit = "n/a"
-			lastActivity = "n/a"
 		}
 
 		if len(syncCommit) > 7 {
@@ -76,7 +78,7 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 			SyncStatus:   string(app.Status.Sync.Status),
 			SyncCommit:   syncCommit,
 			Project:      app.Spec.Project,
-			LastActivity: lastActivity,
+			LastActivity: lastSyncTime,
 		})
 	}
 	return apps, nil
@@ -165,5 +167,35 @@ func (a *ArgoCdClient) RefreshApp(appName string, refreshType string) error {
 		return a.logger.Errorf("Error refreshing app %s: %v", appName, err)
 	}
 
+	return nil
+}
+
+func (a *ArgoCdClient) SyncApp(appName string) error {
+	_, appClient, err := a.client.NewApplicationClient()
+	if err != nil {
+		return a.logger.Errorf("Error getting application client: %v", err)
+	}
+	syncRequest := &application.ApplicationSyncRequest{
+		Name: &appName,
+	}
+	_, err = appClient.Sync(a.ctx, syncRequest)
+	if err != nil {
+		return a.logger.Errorf("Error syncing app %s: %v", appName, err)
+	}
+	return nil
+}
+
+func (a *ArgoCdClient) DeleteApp(appName string) error {
+	_, appClient, err := a.client.NewApplicationClient()
+	if err != nil {
+		return a.logger.Errorf("Error getting application client: %v", err)
+	}
+	deleteRequest := &application.ApplicationDeleteRequest{
+		Name: &appName,
+	}
+	_, err = appClient.Delete(a.ctx, deleteRequest)
+	if err != nil {
+		return a.logger.Errorf("Error deleting app %s: %v", appName, err)
+	}
 	return nil
 }

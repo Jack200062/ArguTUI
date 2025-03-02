@@ -292,6 +292,30 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		}
 		s.showToast(fmt.Sprintf("App %s refreshed successfully!", selectedApp.Name), 2*time.Second)
 		return nil
+	case 'S':
+		row, _ := s.table.GetSelection()
+		if row < 1 || row-1 >= len(s.filteredApps) {
+			return event
+		}
+		selectedApp := s.filteredApps[row-1]
+		err := s.syncApplication(selectedApp.Name)
+		if err != nil {
+			modal := components.ErrorModal(
+				fmt.Sprintf("Error syncing app %s:", selectedApp.Name),
+				err.Error(),
+				s.modalClose,
+			)
+			s.app.SetRoot(modal, true)
+		}
+		return nil
+	case 'D':
+		row, _ := s.table.GetSelection()
+		if row < 1 || row-1 >= len(s.filteredApps) {
+			return event
+		}
+		selectedApp := s.filteredApps[row-1]
+		s.confirmAndDeleteApplication(selectedApp.Name)
+		return nil
 	case 'F', 'f':
 		s.showFilterMenu()
 		return nil
@@ -311,7 +335,7 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		}
 		s.applyFilters()
 		return nil
-	case 's', 'S':
+	case 's':
 		if s.syncFilter == "Synced" {
 			s.syncFilter = ""
 		} else {
@@ -360,6 +384,48 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 	return event
 }
 
+func (s *ScreenAppList) syncApplication(appName string) error {
+	err := s.client.SyncApp(appName)
+	if err != nil {
+		modal := components.ErrorModal(
+			fmt.Sprintf("Error syncing app %s:", appName),
+			err.Error(),
+			s.modalClose,
+		)
+		s.app.SetRoot(modal, true)
+		return err
+	}
+	s.showToast(fmt.Sprintf("App %s synced successfully!", appName), 2*time.Second)
+	s.refreshApps()
+	return nil
+}
+
+func (s *ScreenAppList) confirmAndDeleteApplication(appName string) {
+	modal := tview.NewModal().
+		SetText(fmt.Sprintf("Are you sure you want to delete application %s?", appName)).
+		AddButtons([]string{"Yes", "No"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			if buttonIndex == 0 { // "Yes" button
+				err := s.client.DeleteApp(appName)
+				if err != nil {
+					errorModal := components.ErrorModal(
+						fmt.Sprintf("Error deleting app %s:", appName),
+						err.Error(),
+						s.modalClose,
+					)
+					s.app.SetRoot(errorModal, true)
+					return
+				}
+				s.showToast(fmt.Sprintf("App %s deleted successfully!", appName), 2*time.Second)
+				s.refreshApps()
+			}
+			s.app.SetRoot(s.pages, true)
+		})
+
+	modal.SetBackgroundColor(tcell.ColorDarkRed)
+	s.app.SetRoot(modal, true)
+}
+
 func (s *ScreenAppList) modalClose() {
 	s.app.SetRoot(s.pages, true)
 }
@@ -394,7 +460,6 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 		s.table.SetCell(0, col, headerCell)
 	}
 
-	// Обновляем заголовок с информацией о фильтрах
 	title := " Applications "
 	if s.projectFilter != "" || s.healthFilter != "" || s.syncFilter != "" || s.searchQuery != "" {
 		title = fmt.Sprintf(" Applications (%s) ", s.getActiveFiltersText())
