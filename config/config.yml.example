@@ -1,0 +1,10 @@
+instances:
+  - name: lab
+    url: "localhost:8080"
+    token: "no-token-needed"
+    insecureskipverify: true
+  - name: production
+    url: "localhost:8081"
+    token: "another-token..."
+    insecureskipverify: true
+

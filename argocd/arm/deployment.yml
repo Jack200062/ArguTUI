@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arm-guestbook-deployment
+  labels:
+    app: arm-guestbook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arm-guestbook
+  template:
+    metadata:
+      labels:
+        app: arm-guestbook
+    spec:
+      containers:
+      - name: arm-guestbook
+        # Образ nginxdemos/hello поддерживает arm64.
+        image: nginxdemos/hello:latest
+        ports:
+        - containerPort: 80
+
