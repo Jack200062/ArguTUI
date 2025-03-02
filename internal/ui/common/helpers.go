@@ -3,6 +3,7 @@ package common
 import (
 	"strings"
 
+	ui "github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -39,4 +40,33 @@ func SetRowColor(table *tview.Table, row, columns int, color tcell.Color) {
 			cell.SetTextColor(color)
 		}
 	}
+}
+
+func SetupExitHandler(tviewApp *tview.Application, router *ui.Router) {
+	tviewApp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if (event.Rune() == 'q' || event.Key() == tcell.KeyCtrlC || event.Key() == tcell.KeyEsc) && !router.IsModalActive() {
+			modal := tview.NewModal().
+				SetText("Are you sure you want to close?").
+				AddButtons([]string{"Yes", "No"}).
+				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+					if buttonIndex == 0 {
+						tviewApp.Stop()
+					} else {
+						router.CloseModal()
+					}
+				}).SetButtonTextColor(tcell.NewHexColor(0x017be9))
+
+			backgroundColor := tcell.NewHexColor(0x000000)
+			textColor := tcell.NewHexColor(0x805700)
+
+			modal.SetBackgroundColor(backgroundColor)
+			modal.SetTextColor(textColor)
+			modal.SetBorderColor(backgroundColor)
+
+			router.ShowModal(modal)
+			return nil
+		}
+
+		return event
+	})
 }

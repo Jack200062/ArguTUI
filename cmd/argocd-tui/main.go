@@ -68,10 +68,10 @@ func main() {
 		logger.Fatal("No instances found in config")
 	}
 
+	common.SetupExitHandler(tviewApp, router)
 	if err := tviewApp.Run(); err != nil {
 		logger.Fatal("Error running ArguTUI: %v", err)
 	}
-
 	logger.Info("Closing application")
 	tviewApp.Stop()
 	cancel()
