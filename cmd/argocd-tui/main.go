@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/Jack200062/ArguTUI/config"
@@ -14,7 +15,16 @@ import (
 	"github.com/rivo/tview"
 )
 
+var (
+	Version   = "dev"
+	BuildDate = "unknown"
+)
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Printf("ArguTUI version %s (built at %s)\n", Version, BuildDate)
+		return
+	}
 	logger := logging.NewLogger()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

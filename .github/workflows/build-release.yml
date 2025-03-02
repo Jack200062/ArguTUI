@@ -1,0 +1,103 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate build date
+        id: build_date
+        run: echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+          
+          # Build for various platforms
+          GOOS=linux GOARCH=amd64 go build -ldflags="-X 'main.Version=${{ steps.get_version.outputs.VERSION }}' -X 'main.BuildDate=${{ steps.build_date.outputs.BUILD_DATE }}'" -o dist/argutui-${{ steps.get_version.outputs.VERSION }}-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -ldflags="-X 'main.Version=${{ steps.get_version.outputs.VERSION }}' -X 'main.BuildDate=${{ steps.build_date.outputs.BUILD_DATE }}'" -o dist/argutui-${{ steps.get_version.outputs.VERSION }}-linux-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-X 'main.Version=${{ steps.get_version.outputs.VERSION }}' -X 'main.BuildDate=${{ steps.build_date.outputs.BUILD_DATE }}'" -o dist/argutui-${{ steps.get_version.outputs.VERSION }}-darwin-amd64 .
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-X 'main.Version=${{ steps.get_version.outputs.VERSION }}' -X 'main.BuildDate=${{ steps.build_date.outputs.BUILD_DATE }}'" -o dist/argutui-${{ steps.get_version.outputs.VERSION }}-darwin-arm64 .
+          GOOS=windows GOARCH=amd64 go build -ldflags="-X 'main.Version=${{ steps.get_version.outputs.VERSION }}' -X 'main.BuildDate=${{ steps.build_date.outputs.BUILD_DATE }}'" -o dist/argutui-${{ steps.get_version.outputs.VERSION }}-windows-amd64.exe .
+          
+          # Create checksum file
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Generate changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configurationJson: |
+            {
+              "categories": [
+                {
+                  "title": "## 🚀 Features",
+                  "labels": ["feature", "enhancement"]
+                },
+                {
+                  "title": "## 🐛 Fixes",
+                  "labels": ["fix", "bug"]
+                },
+                {
+                  "title": "## 🧰 Maintenance",
+                  "labels": ["chore", "documentation", "refactor"]
+                }
+              ]
+            }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          {
+            echo "# ArguTUI ${{ steps.get_version.outputs.VERSION }}"
+            echo ""
+            echo "${{ steps.changelog.outputs.changelog }}"
+            echo ""
+            echo "## Binaries"
+            echo ""
+            echo "The following binaries are available for this release:"
+            echo ""
+            echo "- Linux (amd64): \`argutui-${{ steps.get_version.outputs.VERSION }}-linux-amd64\`"
+            echo "- Linux (arm64): \`argutui-${{ steps.get_version.outputs.VERSION }}-linux-arm64\`"
+            echo "- macOS (amd64): \`argutui-${{ steps.get_version.outputs.VERSION }}-darwin-amd64\`"
+            echo "- macOS (arm64): \`argutui-${{ steps.get_version.outputs.VERSION }}-darwin-arm64\`"
+            echo "- Windows (amd64): \`argutui-${{ steps.get_version.outputs.VERSION }}-windows-amd64.exe\`"
+            echo ""
+            echo "All files come with checksums in the \`checksums.txt\` file."
+          } > release_notes.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/*
+          body_path: release_notes.md
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: false
