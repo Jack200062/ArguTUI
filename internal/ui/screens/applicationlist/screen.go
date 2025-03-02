@@ -2,8 +2,10 @@ package applicationlist
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
@@ -26,6 +28,11 @@ type ScreenAppList struct {
 	pages        *tview.Pages
 	searchBar    *components.SimpleSearchBar
 	filteredApps []argocd.Application
+
+	projectFilter string
+	healthFilter  string
+	syncFilter    string
+	searchQuery   string
 }
 
 func New(
@@ -48,7 +55,10 @@ func New(
 func (s *ScreenAppList) Init() tview.Primitive {
 	s.startAutoRefresh()
 
-	shortCutInfo := components.ShortcutBar()
+	shortCutInfo := tview.NewTextView().
+		SetText(" q Quit ? Help f Filter h/d/p Health s/o Sync \n R Refresh r RefreshApp c ClearFilters").
+		SetTextAlign(tview.AlignLeft).
+		SetTextColor(tcell.ColorYellow)
 
 	instanceBox := tview.NewTextView().
 		SetText(s.instanceInfo.String()).
@@ -90,11 +100,133 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	return s.pages
 }
 
+func (s *ScreenAppList) startAutoRefresh() {
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			<-ticker.C
+			s.app.QueueUpdateDraw(func() {
+				newApps, err := s.client.GetApps()
+				if err != nil {
+					return
+				}
+				s.apps = newApps
+				s.applyFilters()
+			})
+		}
+	}()
+}
+
+func (s *ScreenAppList) refreshApps() {
+	newApps, err := s.client.GetApps()
+	if err != nil {
+		return
+	}
+	s.apps = newApps
+	s.applyFilters()
+}
+
+func (s *ScreenAppList) applyFilters() {
+	filteredApps := s.apps
+
+	if s.projectFilter != "" {
+		var filtered []argocd.Application
+		for _, app := range filteredApps {
+			if app.Project == s.projectFilter {
+				filtered = append(filtered, app)
+			}
+		}
+		filteredApps = filtered
+	}
+
+	if s.healthFilter != "" {
+		var filtered []argocd.Application
+		for _, app := range filteredApps {
+			if strings.EqualFold(app.HealthStatus, s.healthFilter) {
+				filtered = append(filtered, app)
+			}
+		}
+		filteredApps = filtered
+	}
+
+	// Применяем фильтр по sync status
+	if s.syncFilter != "" {
+		var filtered []argocd.Application
+		for _, app := range filteredApps {
+			if strings.EqualFold(app.SyncStatus, s.syncFilter) {
+				filtered = append(filtered, app)
+			}
+		}
+		filteredApps = filtered
+	}
+
+	if s.searchQuery != "" {
+		filteredApps = filterApplications(filteredApps, s.searchQuery)
+	}
+
+	s.filteredApps = filteredApps
+	s.fillTable(s.filteredApps)
+}
+
+func (s *ScreenAppList) getActiveFiltersText() string {
+	var parts []string
+
+	if s.projectFilter != "" {
+		parts = append(parts, fmt.Sprintf("Project=%s", s.projectFilter))
+	}
+
+	if s.healthFilter != "" {
+		parts = append(parts, fmt.Sprintf("Health=%s", s.healthFilter))
+	}
+
+	if s.syncFilter != "" {
+		parts = append(parts, fmt.Sprintf("Sync=%s", s.syncFilter))
+	}
+
+	if len(parts) == 0 {
+		return "None"
+	}
+
+	return strings.Join(parts, ", ")
+}
+
+func (s *ScreenAppList) initLiveSearch() {
+	var debounceTimer *time.Timer
+	s.searchBar.InputField.SetChangedFunc(func(text string) {
+		if debounceTimer != nil {
+			debounceTimer.Stop()
+		}
+		debounceTimer = time.AfterFunc(500*time.Millisecond, func() {
+			s.app.QueueUpdateDraw(func() {
+				s.searchQuery = text
+				s.applyFilters()
+			})
+		})
+	})
+}
+
+func (s *ScreenAppList) showSearchBar() {
+	s.searchBar.InputField.SetText("")
+	s.grid.RemoveItem(s.table)
+	s.grid.SetRows(3, 1, -1)
+	s.grid.AddItem(s.searchBar.InputField, 1, 0, 1, 1, 0, 0, false).
+		AddItem(s.table, 2, 0, 1, 1, 0, 0, true)
+	s.app.SetFocus(s.searchBar.InputField)
+}
+
+func (s *ScreenAppList) hideSearchBar() {
+	s.grid.RemoveItem(s.searchBar.InputField)
+	s.grid.RemoveItem(s.table)
+	s.grid.SetRows(3, -1)
+	s.grid.AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
+	s.app.SetFocus(s.table)
+}
+
 func (s *ScreenAppList) searchDone(key tcell.Key) {
 	if key == tcell.KeyEnter {
-		query := s.searchBar.InputField.GetText()
-		s.filteredApps = filterApplications(s.apps, query)
-		s.fillTable(s.filteredApps)
+		s.searchQuery = s.searchBar.InputField.GetText()
+		s.applyFilters()
 		s.hideSearchBar()
 		s.app.SetFocus(s.table)
 	}
@@ -118,48 +250,6 @@ func (s *ScreenAppList) helpInputCapture(event *tcell.EventKey) *tcell.EventKey 
 		return nil
 	}
 	return event
-}
-
-func (s *ScreenAppList) startAutoRefresh() {
-	go func() {
-		ticker := time.NewTicker(60 * time.Second)
-		defer ticker.Stop()
-		for {
-			<-ticker.C
-			s.app.QueueUpdateDraw(func() {
-				newApps, err := s.client.GetApps()
-				if err != nil {
-					return
-				}
-				s.apps = newApps
-			})
-		}
-	}()
-}
-
-func (s *ScreenAppList) refreshApps() {
-	newApps, err := s.client.GetApps()
-	if err != nil {
-		return
-	}
-	s.apps = newApps
-	s.filteredApps = newApps
-	s.fillTable(s.filteredApps)
-}
-
-func (s *ScreenAppList) initLiveSearch() {
-	var debounceTimer *time.Timer
-	s.searchBar.InputField.SetChangedFunc(func(text string) {
-		if debounceTimer != nil {
-			debounceTimer.Stop()
-		}
-		debounceTimer = time.AfterFunc(500*time.Millisecond, func() {
-			s.app.QueueUpdateDraw(func() {
-				s.filteredApps = filterApplications(s.apps, text)
-				s.fillTable(s.filteredApps)
-			})
-		})
-	})
 }
 
 func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
@@ -202,7 +292,50 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		}
 		s.showToast(fmt.Sprintf("App %s refreshed successfully!", selectedApp.Name), 2*time.Second)
 		return nil
+	case 'F', 'f':
+		s.showFilterMenu()
+		return nil
+	case 'h', 'H':
+		if s.healthFilter == "Healthy" {
+			s.healthFilter = ""
+		} else {
+			s.healthFilter = "Healthy"
+		}
+		s.applyFilters()
+		return nil
+	case 'p', 'P':
+		if s.healthFilter == "Progressing" {
+			s.healthFilter = ""
+		} else {
+			s.healthFilter = "Progressing"
+		}
+		s.applyFilters()
+		return nil
+	case 's', 'S':
+		if s.syncFilter == "Synced" {
+			s.syncFilter = ""
+		} else {
+			s.syncFilter = "Synced"
+		}
+		s.applyFilters()
+		return nil
+	case 'o', 'O':
+		if s.syncFilter == "OutOfSync" {
+			s.syncFilter = ""
+		} else {
+			s.syncFilter = "OutOfSync"
+		}
+		s.applyFilters()
+		return nil
+	case 'c', 'C':
+		s.projectFilter = ""
+		s.healthFilter = ""
+		s.syncFilter = ""
+		s.searchQuery = ""
+		s.applyFilters()
+		return nil
 	}
+
 	if event.Key() == tcell.KeyEnter {
 		row, _ := s.table.GetSelection()
 		if row < 1 || row-1 >= len(s.filteredApps) {
@@ -250,25 +383,6 @@ func (s *ScreenAppList) showToast(message string, duration time.Duration) {
 	}()
 }
 
-func (s *ScreenAppList) showSearchBar() {
-	s.filteredApps = s.apps
-	s.fillTable(s.apps)
-	s.searchBar.InputField.SetText("")
-	s.grid.RemoveItem(s.table)
-	s.grid.SetRows(3, 1, -1)
-	s.grid.AddItem(s.searchBar.InputField, 1, 0, 1, 1, 0, 0, false).
-		AddItem(s.table, 2, 0, 1, 1, 0, 0, true)
-	s.app.SetFocus(s.searchBar.InputField)
-}
-
-func (s *ScreenAppList) hideSearchBar() {
-	s.grid.RemoveItem(s.searchBar.InputField)
-	s.grid.RemoveItem(s.table)
-	s.grid.SetRows(3, -1)
-	s.grid.AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
-	s.app.SetFocus(s.table)
-}
-
 func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 	s.table.Clear()
 	headers := []string{"Name", "HealthStatus", "SyncStatus", "SyncCommit", "Project", "LastActivity"}
@@ -279,6 +393,14 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 			SetExpansion(1)
 		s.table.SetCell(0, col, headerCell)
 	}
+
+	// Обновляем заголовок с информацией о фильтрах
+	title := " Applications "
+	if s.projectFilter != "" || s.healthFilter != "" || s.syncFilter != "" || s.searchQuery != "" {
+		title = fmt.Sprintf(" Applications (%s) ", s.getActiveFiltersText())
+	}
+	s.table.SetTitle(title)
+
 	row := 1
 	for _, app := range apps {
 		nameCell := tview.NewTableCell(app.Name).SetExpansion(1)
@@ -300,6 +422,241 @@ func (s *ScreenAppList) fillTable(apps []argocd.Application) {
 
 		row++
 	}
+}
+
+func (s *ScreenAppList) showFilterMenu() {
+	projects := make(map[string]bool)
+	healthStatuses := make(map[string]bool)
+	syncStatuses := make(map[string]bool)
+
+	for _, app := range s.apps {
+		projects[app.Project] = true
+		healthStatuses[app.HealthStatus] = true
+		syncStatuses[app.SyncStatus] = true
+	}
+
+	projectList := make([]string, 0, len(projects))
+	for project := range projects {
+		projectList = append(projectList, project)
+	}
+	sort.Strings(projectList)
+
+	healthList := make([]string, 0, len(healthStatuses))
+	for status := range healthStatuses {
+		healthList = append(healthList, status)
+	}
+	sort.Strings(healthList)
+
+	syncList := make([]string, 0, len(syncStatuses))
+	for status := range syncStatuses {
+		syncList = append(syncList, status)
+	}
+	sort.Strings(syncList)
+
+	var shortcutsInfo strings.Builder
+	shortcutsInfo.WriteString("Keyboard shortcuts: [a] All ")
+
+	standardHealthShortcuts := map[string]rune{
+		"Healthy":     'h',
+		"Progressing": 'p',
+	}
+
+	standardSyncShortcuts := map[string]rune{
+		"Synced":    's',
+		"OutOfSync": 'o',
+	}
+
+	shortcutsInfo.WriteString("\nHealth: ")
+	for _, status := range healthList {
+		shortcut, hasShortcut := standardHealthShortcuts[status]
+		if hasShortcut {
+			shortcutsInfo.WriteString(fmt.Sprintf("[%c] %s ", shortcut, status))
+		}
+	}
+
+	shortcutsInfo.WriteString("\nSync: ")
+	for _, status := range syncList {
+		shortcut, hasShortcut := standardSyncShortcuts[status]
+		if hasShortcut {
+			shortcutsInfo.WriteString(fmt.Sprintf("[%c] %s ", shortcut, status))
+		}
+	}
+
+	modal := tview.NewModal()
+	modalText := fmt.Sprintf("Filter Applications\n\nCurrent filters: %s\n\n%s", s.getActiveFiltersText(), shortcutsInfo.String())
+	modal.SetText(modalText)
+
+	buttons := []string{"Clear All Filters", "Project Filter", "Health Filter", "Sync Filter"}
+	modal.SetBackgroundColor(tcell.ColorDarkBlue)
+	modal.AddButtons(buttons)
+
+	modal.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+		switch buttonIndex {
+		case 0: // Clear All Filters
+			s.projectFilter = ""
+			s.healthFilter = ""
+			s.syncFilter = ""
+		case 1: // Project Filter
+			s.showProjectFilterMenu(projectList)
+			return
+		case 2: // Health Filter
+			s.showHealthFilterMenu(healthList)
+			return
+		case 3: // Sync Filter
+			s.showSyncFilterMenu(syncList)
+			return
+		}
+
+		s.applyFilters()
+		s.app.SetRoot(s.pages, true)
+	})
+
+	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			s.app.SetRoot(s.pages, true)
+			return nil
+		}
+
+		switch event.Rune() {
+		case 'a', 'A':
+			s.projectFilter = ""
+			s.healthFilter = ""
+			s.syncFilter = ""
+			s.applyFilters()
+			s.app.SetRoot(s.pages, true)
+			return nil
+		default:
+			for status, shortcut := range standardHealthShortcuts {
+				if event.Rune() == shortcut || event.Rune() == unicode.ToUpper(shortcut) {
+					s.healthFilter = status
+					s.applyFilters()
+					s.app.SetRoot(s.pages, true)
+					return nil
+				}
+			}
+
+			for status, shortcut := range standardSyncShortcuts {
+				if event.Rune() == shortcut || event.Rune() == unicode.ToUpper(shortcut) {
+					s.syncFilter = status
+					s.applyFilters()
+					s.app.SetRoot(s.pages, true)
+					return nil
+				}
+			}
+		}
+
+		return event
+	})
+
+	s.app.SetRoot(modal, true)
+}
+
+func (s *ScreenAppList) showProjectFilterMenu(projects []string) {
+	if len(projects) == 0 {
+		s.showToast("No projects found", 2*time.Second)
+		return
+	}
+
+	modal := tview.NewModal()
+	modalText := "Select project to filter by:"
+	modal.SetText(modalText)
+
+	buttons := append([]string{"All (clear filter)"}, projects...)
+	modal.SetBackgroundColor(tcell.ColorDarkBlue)
+	modal.AddButtons(buttons)
+
+	modal.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+		if buttonIndex == 0 {
+			s.projectFilter = ""
+		} else if buttonIndex > 0 && buttonIndex <= len(projects) {
+			s.projectFilter = projects[buttonIndex-1]
+		}
+
+		s.applyFilters()
+		s.app.SetRoot(s.pages, true)
+	})
+
+	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			s.app.SetRoot(s.pages, true)
+			return nil
+		}
+		return event
+	})
+
+	s.app.SetRoot(modal, true)
+}
+
+func (s *ScreenAppList) showHealthFilterMenu(statuses []string) {
+	if len(statuses) == 0 {
+		s.showToast("No health statuses found", 2*time.Second)
+		return
+	}
+
+	modal := tview.NewModal()
+	modalText := "Select health status to filter by:"
+	modal.SetText(modalText)
+
+	buttons := append([]string{"All (clear filter)"}, statuses...)
+	modal.SetBackgroundColor(tcell.ColorDarkBlue)
+	modal.AddButtons(buttons)
+
+	modal.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+		if buttonIndex == 0 {
+			s.healthFilter = ""
+		} else if buttonIndex > 0 && buttonIndex <= len(statuses) {
+			s.healthFilter = statuses[buttonIndex-1]
+		}
+
+		s.applyFilters()
+		s.app.SetRoot(s.pages, true)
+	})
+
+	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			s.app.SetRoot(s.pages, true)
+			return nil
+		}
+		return event
+	})
+
+	s.app.SetRoot(modal, true)
+}
+
+func (s *ScreenAppList) showSyncFilterMenu(statuses []string) {
+	if len(statuses) == 0 {
+		s.showToast("No sync statuses found", 2*time.Second)
+		return
+	}
+
+	modal := tview.NewModal()
+	modalText := "Select sync status to filter by:"
+	modal.SetText(modalText)
+
+	buttons := append([]string{"All (clear filter)"}, statuses...)
+	modal.SetBackgroundColor(tcell.ColorDarkBlue)
+	modal.AddButtons(buttons)
+
+	modal.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+		if buttonIndex == 0 {
+			s.syncFilter = ""
+		} else if buttonIndex > 0 && buttonIndex <= len(statuses) {
+			s.syncFilter = statuses[buttonIndex-1]
+		}
+
+		s.applyFilters()
+		s.app.SetRoot(s.pages, true)
+	})
+
+	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			s.app.SetRoot(s.pages, true)
+			return nil
+		}
+		return event
+	})
+
+	s.app.SetRoot(modal, true)
 }
 
 func (s *ScreenAppList) Name() string {
