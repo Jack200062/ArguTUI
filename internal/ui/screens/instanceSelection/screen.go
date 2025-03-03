@@ -90,10 +90,8 @@ func (s *InstanceSelectionScreen) calculateDimensions() {
 		return
 	}
 
-	// Slightly larger height calculation
 	s.listHeight = numItems*2 + 10 // More padding
 
-	// Calculate width based on content
 	maxMainLen := 0
 	for _, inst := range s.cfg.Instances {
 		if len(inst.Name) > maxMainLen {
@@ -101,36 +99,29 @@ func (s *InstanceSelectionScreen) calculateDimensions() {
 		}
 	}
 
-	// Use the longer of the two for width calculation
 	contentWidth := maxMainLen + 10
 
-	// Add more padding for borders, shortcut, etc.
 	s.listWidth = contentWidth + 12
 
-	// Ensure minimum reasonable width - larger than before
 	if s.listWidth < 45 {
 		s.listWidth = 45
 	}
 }
 
 func (s *InstanceSelectionScreen) Init() tview.Primitive {
-	// Colors
 	textColor := tcell.ColorYellow                 // #795200
 	backgroundColor := tcell.NewHexColor(0x000000) // #000000 for background
-	// Create header with app title
 	header := tview.NewTextView().
 		SetTextColor(textColor).
 		SetTextAlign(tview.AlignCenter).SetText(" ArguTUI - ArgoCD Terminal UI ")
 	header.SetBackgroundColor(backgroundColor)
 
-	// Create footer with keyboard shortcuts
 	footer := tview.NewTextView().
 		SetDynamicColors(true).
 		SetText("[#017be9]↑↓[gray] Navigate  [#017be9]Enter[gray] Select  [#017be9]Esc[gray] Back").
 		SetTextAlign(tview.AlignCenter)
 	footer.SetBackgroundColor(backgroundColor)
 
-	// Combine in a flex layout
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(header, 1, 0, false).
@@ -139,7 +130,6 @@ func (s *InstanceSelectionScreen) Init() tview.Primitive {
 
 	flex.SetBackgroundColor(backgroundColor)
 
-	// Center the flex on screen
 	centeredFlex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(nil, 0, 1, false).

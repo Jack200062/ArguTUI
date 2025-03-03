@@ -8,23 +8,20 @@ import (
 	"github.com/rivo/tview"
 )
 
-// Screen представляет экран приложения
 type Screen interface {
 	Name() string
 	Init() tview.Primitive
 }
 
-// Router управляет навигацией между экранами
 type Router struct {
 	app     *tview.Application
 	screens map[string]Screen
 	current Screen
 	history []string
-	mutex   sync.RWMutex // защита от гонок при параллельном доступе
-	isModal bool         // флаг, показывающий активно ли модальное окно
+	mutex   sync.RWMutex
+	isModal bool
 }
 
-// NewRouter создает новый экземпляр роутера
 func NewRouter(app *tview.Application) *Router {
 	if app == nil {
 		panic("tview.Application cannot be nil")
@@ -36,7 +33,6 @@ func NewRouter(app *tview.Application) *Router {
 	}
 }
 
-// AddScreen добавляет экран в роутер
 func (r *Router) AddScreen(s Screen) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -61,7 +57,6 @@ func (r *Router) AddScreen(s Screen) error {
 	return nil
 }
 
-// SwitchTo переключает на указанный экран
 func (r *Router) SwitchTo(name string) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -83,7 +78,6 @@ func (r *Router) SwitchTo(name string) error {
 	return nil
 }
 
-// Back возвращает к предыдущему экрану
 func (r *Router) Back() error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -109,14 +103,12 @@ func (r *Router) Back() error {
 	return nil
 }
 
-// Current возвращает текущий экран
 func (r *Router) Current() Screen {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 	return r.current
 }
 
-// ShowModal отображает модальное окно и запоминает текущий экран
 func (r *Router) ShowModal(modal tview.Primitive) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -124,7 +116,6 @@ func (r *Router) ShowModal(modal tview.Primitive) {
 	r.app.SetRoot(modal, false)
 }
 
-// CloseModal закрывает модальное окно и возвращается к предыдущему экрану
 func (r *Router) CloseModal() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -135,21 +126,18 @@ func (r *Router) CloseModal() {
 	r.app.SetRoot(r.current.Init(), true)
 }
 
-// IsModalActive возвращает true, если активно модальное окно
 func (r *Router) IsModalActive() bool {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 	return r.isModal
 }
 
-// ResetHistory очищает историю навигации
 func (r *Router) ResetHistory() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	r.history = make([]string, 0)
 }
 
-// SetGlobalInputCapture устанавливает глобальный обработчик ввода
 func (r *Router) SetGlobalInputCapture(callback func(event *tcell.EventKey) *tcell.EventKey) {
 	r.app.SetInputCapture(callback)
 }
