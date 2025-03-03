@@ -49,7 +49,7 @@ func New(
 	apps []argocd.Application,
 ) *ScreenAppList {
 	if instanceInfo == nil {
-		instanceInfo = common.NewInstanceInfo("unknown", "unknown")
+		instanceInfo = common.NewInstanceInfo("n/a", "n/a")
 	}
 
 	return &ScreenAppList{

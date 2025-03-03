@@ -9,10 +9,9 @@ import (
 )
 
 type FilterCategory struct {
-	Title   string
-	Type    FilterType
-	Options []string
-	// Map для быстрого поиска шорткатов
+	Title     string
+	Type      FilterType
+	Options   []string
 	Shortcuts map[string]rune
 }
 
@@ -71,7 +70,6 @@ func ShowMultiFilterMenu(
 		SetText("Active filters: " + StyleText(GetActiveFiltersText(currentFilters), theme.HeaderText)).
 		SetTextAlign(tview.AlignCenter)
 	filtersText.SetBackgroundColor(theme.Background)
-	content.AddItem(filtersText, 1, 0, false)
 
 	categoryList := tview.NewList().
 		SetSelectedBackgroundColor(theme.Selection).
