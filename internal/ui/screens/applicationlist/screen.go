@@ -38,6 +38,7 @@ type ScreenAppList struct {
 	topBar    *TopBar
 	footer    *Footer
 	tableView *TableView
+	helpView  *components.HelpView
 }
 
 func New(
@@ -115,8 +116,12 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	s.pages = tview.NewPages().
 		AddPage("main", s.grid, true, true)
 
-	helpView := components.NewHelpView()
-	s.pages.AddPage("help", helpView.View, true, false)
+	s.helpView = components.NewHelpView()
+	s.helpView.View.SetInputCapture(s.helpView.GetInputCapture(func() {
+		s.pages.SwitchToPage("main")
+		s.app.SetFocus(s.table)
+	}))
+	s.pages.AddPage("help", s.helpView.View, true, false)
 
 	s.grid.SetInputCapture(s.onGridKey)
 
@@ -274,7 +279,8 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		s.router.SwitchTo("InstanceSelection")
 		return nil
 	case '?':
-		s.pages.ShowPage("help")
+		s.pages.SwitchToPage("help")
+		s.app.SetFocus(s.pages)
 		return nil
 	case 'q':
 		if s.footer != nil {
@@ -333,6 +339,14 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case 'F', 'f':
 		s.showFilterMenu()
+		return nil
+	case 'd':
+		if s.healthFilter == "Degraded" {
+			s.healthFilter = ""
+		} else {
+			s.healthFilter = "Degraded"
+		}
+		s.applyFilters()
 		return nil
 	case 'h', 'H':
 		if s.healthFilter == "Healthy" {

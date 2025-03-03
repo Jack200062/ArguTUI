@@ -16,15 +16,12 @@ type HelpView struct {
 	keyColor        tcell.Color
 }
 
-// HelpSection представляет секцию справки
 type HelpSection struct {
 	Title     string
 	Shortcuts map[string]string
 }
 
-// NewHelpView создает новое представление справки с гибкой конфигурацией
 func NewHelpView(options ...func(*HelpView)) *HelpView {
-	// Цвета по умолчанию
 	defaultBgColor := tcell.ColorBlack
 	defaultTextColor := tcell.ColorWhite
 	defaultHeaderColor := tcell.ColorYellow
@@ -37,61 +34,62 @@ func NewHelpView(options ...func(*HelpView)) *HelpView {
 		keyColor:        defaultKeyColor,
 	}
 
-	// Применяем ползовательские опции
 	for _, option := range options {
 		option(helpView)
 	}
 
 	helpView.createView()
+
+	helpView.View.SetText(helpView.RenderHelp())
+
 	return helpView
 }
 
-// WithBackgroundColor устанавливает цвет фона
 func WithBackgroundColor(color tcell.Color) func(*HelpView) {
 	return func(h *HelpView) {
 		h.backgroundColor = color
 	}
 }
 
-// WithTextColor устанавливает цвет текста
 func WithTextColor(color tcell.Color) func(*HelpView) {
 	return func(h *HelpView) {
 		h.textColor = color
 	}
 }
 
-// WithHeaderColor устанавливает цвет заголовков
 func WithHeaderColor(color tcell.Color) func(*HelpView) {
 	return func(h *HelpView) {
 		h.headerColor = color
 	}
 }
 
-// WithKeyColor устанавливает цвет клавиш
 func WithKeyColor(color tcell.Color) func(*HelpView) {
 	return func(h *HelpView) {
 		h.keyColor = color
 	}
 }
 
-// createView создает TextView для отображения справки
 func (h *HelpView) createView() {
 	h.View = tview.NewTextView().
 		SetDynamicColors(true).
 		SetTextAlign(tview.AlignLeft).
 		SetWrap(true)
+	h.View.SetBorder(true).
+		SetTitle(" Help ").
+		SetTitleAlign(tview.AlignCenter)
 
 	h.View.SetBackgroundColor(h.backgroundColor)
 	h.View.SetTextColor(h.textColor)
+	h.View.SetBorderColor(h.keyColor)
+	h.View.SetTitleColor(h.headerColor)
 }
 
-// GenerateSections возвращает стандартные секции справки
 func (h *HelpView) GenerateSections() []HelpSection {
 	return []HelpSection{
 		{
 			Title: "GENERAL",
 			Shortcuts: map[string]string{
-				"q": "Close help screen",
+				"q": "Close TUI application",
 				"?": "Show/hide this help",
 				"b": "Go back to previous screen",
 				"/": "Search in current view",
@@ -115,6 +113,7 @@ func (h *HelpView) GenerateSections() []HelpSection {
 			Shortcuts: map[string]string{
 				"f, F": "Show filter menu",
 				"h, H": "Toggle Healthy filter",
+				"d":    "Toggle Degraded filter",
 				"p, P": "Toggle Progressing filter",
 				"s":    "Toggle Synced filter",
 				"o, O": "Toggle OutOfSync filter",
@@ -124,28 +123,24 @@ func (h *HelpView) GenerateSections() []HelpSection {
 		{
 			Title: "RESOURCES",
 			Shortcuts: map[string]string{
-				"t":   "Toggle resource tree expansion",
-				"d":   "Filter by Deployments",
-				"s":   "Filter by Services",
-				"i":   "Filter by Ingress",
-				"c":   "Filter by ConfigMaps",
-				"Tab": "Navigate to next section",
+				"t": "Toggle resource tree expansion",
+				"d": "Filter by Deployments",
+				"s": "Filter by Services",
+				"i": "Filter by Ingress",
+				"c": "Filter by ConfigMaps",
 			},
 		},
 	}
 }
 
-// RenderHelp генерирует текст справки с цветным форматированием
 func (h *HelpView) RenderHelp() string {
 	var helpText strings.Builder
 
 	helpText.WriteString(fmt.Sprintf("[%s::b]ArguTUI - KEYBOARD SHORTCUTS[-:-:-]\n\n", h.headerColor))
 
 	for _, section := range h.GenerateSections() {
-		// Форматируем заголовок секции
 		helpText.WriteString(fmt.Sprintf("[%s::b]%s:[-:-:-]\n", h.headerColor, section.Title))
 
-		// Форматируем каждый шорткат
 		for key, desc := range section.Shortcuts {
 			helpText.WriteString(fmt.Sprintf("[%s]%s[%s] %s\n",
 				h.keyColor.String(),
@@ -156,19 +151,19 @@ func (h *HelpView) RenderHelp() string {
 		helpText.WriteString("\n")
 	}
 
+	helpText.WriteString("\n[" + h.keyColor.String() + "]Press '?' to close this help screen[-:-:-]")
+
 	return helpText.String()
 }
 
-// Render возвращает готовый компонент TextView
 func (h *HelpView) Render() *tview.TextView {
 	h.View.SetText(h.RenderHelp())
 	return h.View
 }
 
-// GetInputCapture возвращает обработчик ввода для закрытия справки
 func (h *HelpView) GetInputCapture(onClose func()) func(event *tcell.EventKey) *tcell.EventKey {
 	return func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Rune() == 'q' || event.Rune() == 'Q' {
+		if event.Rune() == '?' {
 			if onClose != nil {
 				onClose()
 			}
