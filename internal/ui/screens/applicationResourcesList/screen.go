@@ -5,12 +5,12 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
 	"github.com/Jack200062/ArguTUI/internal/ui/components"
+	"github.com/Jack200062/ArguTUI/internal/ui/filters"
 	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -49,10 +49,18 @@ type ScreenAppResourcesList struct {
 	rootResources    []*TreeResource
 	visibleResources []*TreeResource
 	selectedAppName  string
-	kindFilter       string
 	allExpanded      bool
 
 	originalNodes map[string]*TreeResource
+
+	topBar        *TopBar
+	tableView     *TableView
+	footer        *Footer
+	helpView      *components.HelpView
+	filterManager *filters.ResourceFilterManager
+
+	appHealthStatus string
+	appSyncStatus   string
 }
 
 func New(
@@ -63,6 +71,21 @@ func New(
 	instanceInfo *common.InstanceInfo,
 	client *argocd.ArgoCdClient,
 ) *ScreenAppResourcesList {
+	var healthStatus, syncStatus string
+
+	apps, err := client.GetApps()
+	if err == nil {
+		for _, app := range apps {
+			if app.Name == selectedAppName {
+				healthStatus = app.HealthStatus
+				syncStatus = app.SyncStatus
+				break
+			}
+		}
+	}
+
+	instanceInfo = instanceInfo.WithAppInfo(selectedAppName, healthStatus, syncStatus)
+
 	return &ScreenAppResourcesList{
 		app:             app,
 		instanceInfo:    instanceInfo,
@@ -73,6 +96,8 @@ func New(
 		selectedAppName: selectedAppName,
 		originalNodes:   make(map[string]*TreeResource),
 		allExpanded:     true,
+		appHealthStatus: healthStatus,
+		appSyncStatus:   syncStatus,
 	}
 }
 
@@ -134,52 +159,54 @@ func flattenResourcesWithLines(resources []*TreeResource, depth int, parentLineI
 	return result
 }
 
+func (s *ScreenAppResourcesList) extractRootKindFilters() map[string]bool {
+	rootKindTypes := make(map[string]bool)
+	for _, root := range s.rootResources {
+		rootKindTypes[root.Kind] = true
+	}
+	return rootKindTypes
+}
+
 func (s *ScreenAppResourcesList) Init() tview.Primitive {
-	instanceBox := tview.NewTextView().
-		SetText(s.instanceInfo.String()).
-		SetTextAlign(tview.AlignLeft)
-	instanceBox.SetBorder(false)
+	textColor := tcell.NewHexColor(0x00bebe)        // Цвет текста (#00bebe)
+	backgroundColor := tcell.NewHexColor(0x000000)  // Цвет фона (#000000)
+	borderColor := tcell.NewHexColor(0x63a0bf)      // Цвет границы (#63a0bf)
+	shortcutKeyColor := tcell.NewHexColor(0x017be9) // Цвет клавиш (#017be9)
+	selectedBgColor := tcell.NewHexColor(0x373737)  // Цвет выделения (#373737)
 
-	shortCutInfo := tview.NewTextView().
-		SetText(" q Quit ? Help f Filter \n d Deploy s Service c Config t Toggle").
-		SetTextAlign(tview.AlignLeft).
-		SetTextColor(tcell.ColorYellow)
+	s.topBar = NewTopBar(s.instanceInfo, s.selectedAppName, backgroundColor, shortcutKeyColor, textColor)
+	s.footer = NewFooter(s.app, backgroundColor, shortcutKeyColor)
+	s.tableView = NewTableView(s.selectedAppName, textColor, borderColor, backgroundColor, selectedBgColor)
 
-	topBar := tview.NewFlex().
-		SetDirection(tview.FlexColumn).
-		AddItem(instanceBox, 0, 1, false).
-		AddItem(shortCutInfo, 0, 1, false)
+	topBarPrimitive := s.topBar.Init()
+	footerPrimitive := s.footer.Init()
 
-	s.searchBar = components.NewSimpleSearchBar("Search: ", 0)
+	s.searchBar = components.NewSimpleSearchBar("🔍 ", 0)
+	s.initLiveSearch()
 	s.searchBar.InputField.SetDoneFunc(s.searchDone)
 
-	var debounceTimer *time.Timer
-	s.searchBar.InputField.SetChangedFunc(func(text string) {
-		if debounceTimer != nil {
-			debounceTimer.Stop()
-		}
-		debounceTimer = time.AfterFunc(500*time.Millisecond, func() {
-			s.app.QueueUpdateDraw(func() {
-				s.filterResources(text)
-			})
-		})
-	})
-
-	s.table = tview.NewTable().
-		SetSelectable(true, false).
-		SetBorders(false)
-	s.table.SetBorder(true)
-	s.table.SetTitle(fmt.Sprintf(" Resources for %s ", s.selectedAppName))
+	s.table = s.tableView.Init()
 
 	s.grid = tview.NewGrid().
-		SetRows(3, 0).
+		SetRows(3, 0, 1). // header (topBar), table, footer
 		SetColumns(0).
 		SetBorders(true)
-	s.grid.AddItem(topBar, 0, 0, 1, 1, 0, 0, false)
-	s.grid.AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
+	s.grid.AddItem(topBarPrimitive, 0, 0, 1, 1, 0, 0, false).
+		AddItem(s.table, 1, 0, 1, 1, 0, 0, true).
+		AddItem(footerPrimitive, 2, 0, 1, 1, 0, 0, false)
 
 	s.pages = tview.NewPages().
 		AddPage("main", s.grid, true, true)
+
+	s.filterManager = filters.NewResourceFilterManager(s.app, s.pages)
+	s.filterManager.SetFilterChangedHandler(s.onFiltersChanged)
+
+	s.helpView = components.NewHelpView()
+	s.helpView.View.SetInputCapture(s.helpView.GetInputCapture(func() {
+		s.pages.SwitchToPage("main")
+		s.app.SetFocus(s.table)
+	}))
+	s.pages.AddPage("help", s.helpView.View, true, false)
 
 	s.table.SetInputCapture(s.onTableKey)
 
@@ -187,8 +214,119 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 		s.showToast(fmt.Sprintf("Error building tree: %v", err), 3*time.Second)
 	}
 
+	s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+
+	rootKindTypes := s.extractRootKindFilters()
+
+	healthStatuses := make(map[string]bool)
+	syncStatuses := make(map[string]bool)
+	var collectStatuses func([]*TreeResource)
+	collectStatuses = func(nodes []*TreeResource) {
+		for _, node := range nodes {
+			if node.Health != "" {
+				healthStatuses[node.Health] = true
+			}
+			if node.SyncStatus != "" {
+				syncStatuses[node.SyncStatus] = true
+			}
+			collectStatuses(node.Children)
+		}
+	}
+	collectStatuses(s.rootResources)
+
+	healthStatusList := make([]string, 0, len(healthStatuses))
+	for status := range healthStatuses {
+		healthStatusList = append(healthStatusList, status)
+	}
+	sort.Strings(healthStatusList)
+
+	syncStatusList := make([]string, 0, len(syncStatuses))
+	for status := range syncStatuses {
+		syncStatusList = append(syncStatusList, status)
+	}
+	sort.Strings(syncStatusList)
+
+	s.filterManager = filters.NewResourceFilterManager(s.app, s.pages)
+	s.filterManager.SetFilterChangedHandler(s.onFiltersChanged)
+	s.filterManager.ExtractKindsFromResources(rootKindTypes)
+	s.filterManager.SetHealthStatuses(healthStatusList)
+	s.filterManager.SetSyncStatuses(syncStatusList)
+
 	s.fillTableTreeMode()
 	return s.pages
+}
+
+func (s *ScreenAppResourcesList) onFiltersChanged(activeFilters []filters.FilterState) {
+	var kindFilter, healthFilter, syncFilter string
+
+	for _, filter := range activeFilters {
+		switch filter.Type {
+		case filters.ResourceKindFilter:
+			kindFilter = filter.Value
+		case filters.HealthFilter:
+			healthFilter = filter.Value
+		case filters.SyncFilter:
+			syncFilter = filter.Value
+		}
+	}
+
+	_ = s.buildTreeFromResourceTree()
+
+	if kindFilter != "" {
+		s.filterResourcesByKind(kindFilter)
+	} else if healthFilter != "" || syncFilter != "" {
+		s.filterResourcesByStatus(healthFilter, syncFilter)
+	} else {
+		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+	}
+
+	s.fillTableTreeMode()
+}
+
+func (s *ScreenAppResourcesList) filterResourcesByKind(kindFilter string) {
+	if kindFilter == "" {
+		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+		return
+	}
+
+	var filteredRoots []*TreeResource
+
+	for _, root := range s.rootResources {
+		if root.Kind == kindFilter {
+			rootCopy := *root
+			rootCopy.Expanded = true
+			filteredRoots = append(filteredRoots, &rootCopy)
+		}
+	}
+
+	if len(filteredRoots) > 0 {
+		s.visibleResources = flattenResourcesWithLines(filteredRoots, 0, nil)
+	} else {
+		s.showToast(fmt.Sprintf("No root resources of type %s found", kindFilter), 2*time.Second)
+		s.filterManager.SetFilter(filters.ResourceKindFilter, "")
+		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+	}
+}
+
+func (s *ScreenAppResourcesList) filterResourcesByStatus(healthFilter, syncFilter string) {
+	if healthFilter == "" && syncFilter == "" {
+		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+		return
+	}
+
+	allNodes := flattenResourcesWithLines(s.rootResources, 0, nil)
+	var filtered []*TreeResource
+
+	for _, node := range allNodes {
+		healthMatch := healthFilter == "" || strings.EqualFold(node.Health, healthFilter)
+		syncMatch := syncFilter == "" || strings.EqualFold(node.SyncStatus, syncFilter)
+
+		if healthMatch && syncMatch {
+			filtered = append(filtered, node)
+		}
+	}
+
+	s.visibleResources = filtered
 }
 
 func (s *ScreenAppResourcesList) toggleExpansionAll() {
@@ -203,229 +341,30 @@ func (s *ScreenAppResourcesList) toggleExpansionAll() {
 		}
 		s.allExpanded = true
 	}
+
+	s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
 	s.fillTableTreeMode()
 }
 
-func (s *ScreenAppResourcesList) onTableKey(event *tcell.EventKey) *tcell.EventKey {
-	switch event.Rune() {
-	case 'q':
-		s.app.Stop()
-		return nil
-	case 'b':
-		s.router.Back()
-		return nil
-	case 't':
-		s.toggleExpansionAll()
-		return nil
-	case '/', ':':
-		s.showSearchBar()
-		return nil
-	case 'f', 'F':
-		s.showKindFilterMenu()
-		return nil
-	case 'd', 'D':
-		if s.kindFilter == "Deployment" {
-			s.kindFilter = ""
-		} else {
-			s.kindFilter = "Deployment"
+func (s *ScreenAppResourcesList) initLiveSearch() {
+	var debounceTimer *time.Timer
+	s.searchBar.InputField.SetChangedFunc(func(text string) {
+		if debounceTimer != nil {
+			debounceTimer.Stop()
 		}
-		s.fillTableTreeMode()
-		return nil
-	case 's', 'S':
-		if s.kindFilter == "Service" {
-			s.kindFilter = ""
-		} else {
-			s.kindFilter = "Service"
-		}
-		s.fillTableTreeMode()
-		return nil
-	case 'i', 'I':
-		if s.kindFilter == "Ingress" {
-			s.kindFilter = ""
-		} else {
-			s.kindFilter = "Ingress"
-		}
-		s.fillTableTreeMode()
-		return nil
-	case 'c', 'C':
-		if s.kindFilter == "ConfigMap" {
-			s.kindFilter = ""
-		} else {
-			s.kindFilter = "ConfigMap"
-		}
-		s.fillTableTreeMode()
-		return nil
-	}
-
-	if event.Key() == tcell.KeyEnter {
-		row, _ := s.table.GetSelection()
-		if row > 0 && row-1 < len(s.visibleResources) {
-			selected := s.visibleResources[row-1]
-			nodeKey := getNodeKey(selected)
-			if originalNode, exists := s.originalNodes[nodeKey]; exists {
-				if !originalNode.Expanded {
-					expandFully(originalNode)
-				} else {
-					collapseFully(originalNode)
-				}
-				s.fillTableTreeMode()
-			}
-		}
-		return nil
-	}
-
-	return event
-}
-
-func generateTreePrefix(node *TreeResource, parentLineInfo *TreeLineInfo) string {
-	if node.Depth == 0 {
-		if len(node.Children) > 0 {
-			if node.Expanded {
-				return "▼ "
-			}
-			return "▶ "
-		}
-		return "  "
-	}
-
-	var prefix strings.Builder
-
-	for i := 0; i < node.Depth-1; i++ {
-		if parentLineInfo != nil && i < len(parentLineInfo.LineChars) {
-			if parentLineInfo.LineChars[i] == '│' {
-				prefix.WriteString("│ ")
-			} else {
-				prefix.WriteString("  ")
-			}
-		} else {
-			prefix.WriteString("  ")
-		}
-	}
-
-	if node.IsLast {
-		prefix.WriteString("└─")
-	} else {
-		prefix.WriteString("├─")
-	}
-
-	if len(node.Children) > 0 {
-		if node.Expanded {
-			prefix.WriteString("▼ ")
-		} else {
-			prefix.WriteString("▶ ")
-		}
-	} else {
-		prefix.WriteString("  ")
-	}
-
-	return prefix.String()
-}
-
-func (s *ScreenAppResourcesList) showKindFilterMenu() {
-	rootKindsWithChildren := make(map[string]bool)
-
-	var findRootKindsWithChildren func([]*TreeResource, bool)
-	findRootKindsWithChildren = func(nodes []*TreeResource, isRoot bool) {
-		for _, node := range nodes {
-			if isRoot && len(node.Children) > 0 {
-				rootKindsWithChildren[node.Kind] = true
-			}
-			findRootKindsWithChildren(node.Children, false)
-		}
-	}
-
-	findRootKindsWithChildren(s.rootResources, true)
-
-	sortedKinds := make([]string, 0, len(rootKindsWithChildren))
-	for kind := range rootKindsWithChildren {
-		sortedKinds = append(sortedKinds, kind)
-	}
-	sort.Strings(sortedKinds)
-
-	if len(sortedKinds) == 0 {
-		s.showToast("No root resources with children found", 2*time.Second)
-		return
-	}
-
-	standardShortcuts := map[string]rune{
-		"Deployment": 'd',
-		"Service":    's',
-		"Ingress":    'i',
-		"ConfigMap":  'c',
-		"Secret":     'x',
-		"Pod":        'p',
-		"Job":        'j',
-		"CronJob":    'r',
-		"Namespace":  'n',
-	}
-
-	var shortcutsInfo strings.Builder
-	shortcutsInfo.WriteString("Keyboard shortcuts: [a] All ")
-
-	for _, kind := range sortedKinds {
-		shortcut, hasShortcut := standardShortcuts[kind]
-		if hasShortcut {
-			shortcutsInfo.WriteString(fmt.Sprintf("[%c] %s ", shortcut, kind))
-		}
-	}
-
-	modal := tview.NewModal()
-	modalText := "Choose parent resource type to filter\n\n" + shortcutsInfo.String()
-	modal.SetText(modalText)
-
-	buttons := []string{"All (clear filter)"}
-	for _, kind := range sortedKinds {
-		buttons = append(buttons, kind)
-	}
-
-	modal.SetBackgroundColor(tcell.ColorDarkBlue)
-	modal.AddButtons(buttons)
-
-	modal.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-		if buttonIndex == 0 {
-			s.kindFilter = ""
-		} else if buttonIndex > 0 && buttonIndex <= len(sortedKinds) {
-			s.kindFilter = sortedKinds[buttonIndex-1]
-		}
-		s.fillTableTreeMode()
-		s.app.SetRoot(s.pages, true)
+		debounceTimer = time.AfterFunc(500*time.Millisecond, func() {
+			s.app.QueueUpdateDraw(func() {
+				s.filterResources(text)
+			})
+		})
 	})
-
-	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEscape {
-			s.app.SetRoot(s.pages, true)
-			return nil
-		}
-
-		switch event.Rune() {
-		case 'a', 'A':
-			s.kindFilter = ""
-			s.fillTableTreeMode()
-			s.app.SetRoot(s.pages, true)
-			return nil
-		default:
-			for i, kind := range sortedKinds {
-				shortcut, hasShortcut := standardShortcuts[kind]
-				if hasShortcut && (event.Rune() == shortcut || event.Rune() == unicode.ToUpper(shortcut)) {
-					s.kindFilter = sortedKinds[i]
-					s.fillTableTreeMode()
-					s.app.SetRoot(s.pages, true)
-					return nil
-				}
-			}
-		}
-
-		return event
-	})
-
-	s.app.SetRoot(modal, true)
 }
 
 func (s *ScreenAppResourcesList) showSearchBar() {
 	s.grid.RemoveItem(s.table)
 	s.searchBar.InputField.SetText("")
 
-	s.grid.SetRows(3, 1, -1)
+	s.grid.SetRows(3, 1, -1, 1)
 	s.grid.AddItem(s.searchBar.InputField, 1, 0, 1, 1, 0, 0, false)
 	s.grid.AddItem(s.table, 2, 0, 1, 1, 0, 0, true)
 	s.app.SetFocus(s.searchBar.InputField)
@@ -434,11 +373,12 @@ func (s *ScreenAppResourcesList) showSearchBar() {
 func (s *ScreenAppResourcesList) hideSearchBar() {
 	s.grid.RemoveItem(s.searchBar.InputField)
 	s.grid.RemoveItem(s.table)
-	s.grid.SetRows(3, 0)
+	s.grid.SetRows(3, 0, 1)
 	s.grid.AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
 	s.app.SetFocus(s.table)
 }
 
+// Восстановленный метод для обработки завершения поиска
 func (s *ScreenAppResourcesList) searchDone(key tcell.Key) {
 	if key == tcell.KeyEnter {
 		query := s.searchBar.InputField.GetText()
@@ -467,29 +407,9 @@ func (s *ScreenAppResourcesList) filterResources(query string) {
 		}
 	}
 
-	s.table.Clear()
-	headers := []string{"Kind", "Name", "Health", "SyncStatus", "Namespace"}
-	for col, h := range headers {
-		cell := tview.NewTableCell("[::b]" + h).
-			SetTextColor(tcell.ColorYellow).
-			SetSelectable(false).
-			SetExpansion(1)
-		s.table.SetCell(0, col, cell)
-	}
+	s.footer.UpdateResourceCount(len(filtered))
 
-	row := 1
-	for _, tr := range filtered {
-		s.table.SetCell(row, 0, tview.NewTableCell(tr.Kind).SetExpansion(1))
-		s.table.SetCell(row, 1, tview.NewTableCell(tr.Name).SetExpansion(1))
-		s.table.SetCell(row, 2, tview.NewTableCell(tr.Health).SetExpansion(1))
-		s.table.SetCell(row, 3, tview.NewTableCell(tr.SyncStatus).SetExpansion(1))
-		s.table.SetCell(row, 4, tview.NewTableCell(tr.Namespace).SetExpansion(1))
-
-		rowColor := common.RowColorForStatuses(tr.Health, tr.SyncStatus)
-		common.SetRowColor(s.table, row, len(headers), rowColor)
-
-		row++
-	}
+	s.tableView.FillTableWithSearch(filtered)
 }
 
 func (s *ScreenAppResourcesList) buildTreeFromResourceTree() error {
@@ -511,7 +431,7 @@ func buildTreeFromNodes(nodes []v1alpha1.ResourceNode) []*TreeResource {
 			Kind:      n.Kind,
 			Name:      n.Name,
 			Namespace: n.Namespace,
-			Expanded:  false,
+			Expanded:  true,
 			Children:  []*TreeResource{},
 		}
 		if n.Health != nil {
@@ -522,6 +442,7 @@ func buildTreeFromNodes(nodes []v1alpha1.ResourceNode) []*TreeResource {
 		tr.SyncStatus = "Synced"
 		resourceMap[n.UID] = tr
 	}
+
 	for i := range nodes {
 		n := &nodes[i]
 		childTR := resourceMap[n.UID]
@@ -531,6 +452,7 @@ func buildTreeFromNodes(nodes []v1alpha1.ResourceNode) []*TreeResource {
 			}
 		}
 	}
+
 	var roots []*TreeResource
 	for i := range nodes {
 		n := &nodes[i]
@@ -541,103 +463,77 @@ func buildTreeFromNodes(nodes []v1alpha1.ResourceNode) []*TreeResource {
 	return roots
 }
 
-func (s *ScreenAppResourcesList) fillTableTreeMode() {
-	s.table.Clear()
-	headers := []string{"Kind", "Name", "Health", "SyncStatus", "Namespace"}
-	for col, h := range headers {
-		cell := tview.NewTableCell("[::b]" + h).
-			SetTextColor(tcell.ColorYellow).
-			SetSelectable(false).
-			SetExpansion(1)
-		s.table.SetCell(0, col, cell)
-	}
-
-	if s.kindFilter != "" {
-		s.table.SetTitle(fmt.Sprintf(" Resources for %s (Filtered: %s) ", s.selectedAppName, s.kindFilter))
-	} else {
-		s.table.SetTitle(fmt.Sprintf(" Resources for %s ", s.selectedAppName))
-	}
-
-	var rootsToShow []*TreeResource
-
-	if s.kindFilter == "" {
-		rootsToShow = s.rootResources
-	} else {
-		rootsToShow = s.filterResourcesWithChildren()
-	}
-
-	s.visibleResources = flattenResourcesWithLines(rootsToShow, 0, nil)
-
-	row := 1
-	for _, tr := range s.visibleResources {
-		var lineInfo *TreeLineInfo
-
-		treePrefix := generateTreePrefix(tr, lineInfo)
-		kindText := treePrefix + tr.Kind
-
-		s.table.SetCell(row, 0, tview.NewTableCell(kindText).SetExpansion(1))
-		s.table.SetCell(row, 1, tview.NewTableCell(tr.Name).SetExpansion(1))
-		s.table.SetCell(row, 2, tview.NewTableCell(tr.Health).SetExpansion(1))
-		s.table.SetCell(row, 3, tview.NewTableCell(tr.SyncStatus).SetExpansion(1))
-		s.table.SetCell(row, 4, tview.NewTableCell(tr.Namespace).SetExpansion(1))
-
-		rowColor := common.RowColorForStatuses(tr.Health, tr.SyncStatus)
-		common.SetRowColor(s.table, row, len(headers), rowColor)
-
-		row++
-	}
-}
-
-func (s *ScreenAppResourcesList) filterResourcesWithChildren() []*TreeResource {
-	if s.kindFilter == "" {
-		return s.rootResources
-	}
-
-	var filteredRoots []*TreeResource
-
-	var filterNode func(*TreeResource, bool) *TreeResource
-	filterNode = func(node *TreeResource, isChildOfTarget bool) *TreeResource {
-		if node.Kind == s.kindFilter || isChildOfTarget {
-			nodeCopy := *node
-
-			var filteredChildren []*TreeResource
-			for _, child := range node.Children {
-				childIsChildOfTarget := isChildOfTarget || node.Kind == s.kindFilter
-				filteredChild := filterNode(child, childIsChildOfTarget)
-				if filteredChild != nil {
-					filteredChildren = append(filteredChildren, filteredChild)
-				}
-			}
-
-			nodeCopy.Children = filteredChildren
-			return &nodeCopy
+func (s *ScreenAppResourcesList) onTableKey(event *tcell.EventKey) *tcell.EventKey {
+	switch event.Rune() {
+	case 'q':
+		s.app.Stop()
+		return nil
+	case 'b':
+		s.router.Back()
+		return nil
+	case 't':
+		s.toggleExpansionAll()
+		return nil
+	case '/', ':':
+		s.showSearchBar()
+		return nil
+	case '?':
+		s.pages.SwitchToPage("help")
+		s.app.SetFocus(s.helpView.View)
+		return nil
+	case 'f', 'F':
+		s.filterManager.ShowFilterMenu()
+		return nil
+	case 'd', 'D':
+		s.filterManager.ToggleFilter(filters.ResourceKindFilter, "Deployment")
+		return nil
+	case 's', 'S':
+		s.filterManager.ToggleFilter(filters.ResourceKindFilter, "Service")
+		return nil
+	case 'i', 'I':
+		s.filterManager.ToggleFilter(filters.ResourceKindFilter, "Ingress")
+		return nil
+	case 'c', 'C':
+		if event.Rune() == 'C' {
+			s.filterManager.ClearFilters()
+		} else {
+			s.filterManager.ToggleFilter(filters.ResourceKindFilter, "ConfigMap")
 		}
-
-		var filteredChildren []*TreeResource
-		for _, child := range node.Children {
-			filteredChild := filterNode(child, false)
-			if filteredChild != nil {
-				filteredChildren = append(filteredChildren, filteredChild)
-			}
-		}
-
-		if len(filteredChildren) > 0 {
-			nodeCopy := *node
-			nodeCopy.Children = filteredChildren
-			return &nodeCopy
-		}
-
+		return nil
+	case 'h', 'H':
+		s.filterManager.ToggleFilter(filters.HealthFilter, "Healthy")
+		return nil
+	case 'p', 'P':
+		s.filterManager.ToggleFilter(filters.HealthFilter, "Progressing")
+		return nil
+	case 'o', 'O':
+		s.filterManager.ToggleFilter(filters.SyncFilter, "OutOfSync")
 		return nil
 	}
 
-	for _, root := range s.rootResources {
-		filteredRoot := filterNode(root, false)
-		if filteredRoot != nil {
-			filteredRoots = append(filteredRoots, filteredRoot)
+	if event.Key() == tcell.KeyEnter {
+		row, _ := s.table.GetSelection()
+		if row > 0 && row-1 < len(s.visibleResources) {
+			selected := s.visibleResources[row-1]
+			nodeKey := getNodeKey(selected)
+
+			if originalNode, exists := s.originalNodes[nodeKey]; exists {
+				if len(originalNode.Children) > 0 {
+					if !originalNode.Expanded {
+						expandFully(originalNode)
+					} else {
+						collapseFully(originalNode)
+					}
+
+					s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+					s.fillTableTreeMode()
+				}
+			}
 		}
+		return nil
 	}
 
-	return filteredRoots
+	return event
 }
 
 func (s *ScreenAppResourcesList) buildOriginalNodesMap() {
@@ -654,18 +550,28 @@ func (s *ScreenAppResourcesList) buildOriginalNodesMap() {
 	addToMap(s.rootResources)
 }
 
+func (s *ScreenAppResourcesList) fillTableTreeMode() {
+	s.footer.UpdateResourceCount(len(s.visibleResources))
+	activeFiltersText := s.filterManager.GetActiveFiltersText()
+	s.tableView.FillTableWithTree(s.visibleResources, activeFiltersText)
+}
+
 func (s *ScreenAppResourcesList) showToast(message string, duration time.Duration) {
-	modal := tview.NewModal().
-		SetText(message).
-		AddButtons([]string{"OK"}).
-		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-			s.app.SetRoot(s.pages, true)
-		})
-	s.app.SetRoot(modal, true)
+	var toast *components.SimpleSearchBar
+	s.grid.RemoveItem(s.table)
+	s.grid.SetRows(3, 1, -1, 1) // topBar, toast, table, footer
+	toast = components.NewSimpleSearchBar("✅  ", 0)
+	toast.InputField.SetText(message)
+	s.grid.AddItem(toast.InputField, 1, 0, 1, 1, 0, 0, false)
+	s.grid.AddItem(s.table, 2, 0, 1, 1, 0, 0, true)
+
 	go func() {
 		time.Sleep(duration)
 		s.app.QueueUpdateDraw(func() {
-			s.app.SetRoot(s.pages, true)
+			s.grid.RemoveItem(toast.InputField)
+			s.grid.RemoveItem(s.table)
+			s.grid.SetRows(3, 0, 1) // topBar, table, footer
+			s.grid.AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
 		})
 	}()
 }

@@ -39,22 +39,43 @@ func NewInstanceSelectionScreen(
 }
 
 func (s *InstanceSelectionScreen) initList() {
-	s.list.ShowSecondaryText(false).
+	textColor := tcell.NewHexColor(0x00bebe)        // #795200 for text
+	mainTextColor := tcell.NewHexColor(0x805700)    // #795200 for main text
+	backgroundColor := tcell.NewHexColor(0x000000)  // #000000 for background
+	borderColor := tcell.NewHexColor(0x63a0bf)      // #63a0bf for borders
+	shortcutKeyColor := tcell.NewHexColor(0x017be9) // #003e77 for shortcut keys
+	selectedBgColor := tcell.NewHexColor(0x373737)  // Darker variant for selection
+
+	// Initialize the list with custom colors
+	s.list.ShowSecondaryText(true).
+		SetMainTextColor(mainTextColor).
+		SetShortcutColor(shortcutKeyColor).
+		SetSelectedBackgroundColor(selectedBgColor).
+		SetSelectedTextColor(textColor).
+		SetBackgroundColor(backgroundColor).
+		SetBorderColor(borderColor).
 		SetBorder(true).
-		SetTitle(" Choose instance ").
-		SetTitleAlign(tview.AlignCenter)
+		SetTitle(fmt.Sprintf(" ArgoCD Instances (%d) ", len(s.cfg.Instances))).
+		SetTitleAlign(tview.AlignCenter).
+		SetTitleColor(textColor)
 
 	for i, inst := range s.cfg.Instances {
 		localInst := inst
-		displayText := fmt.Sprintf("%d. %s (%s)", i+1, localInst.Name, localInst.Url)
-		s.list.AddItem(displayText, "", 0, func() {
+		shortcut := rune('1' + i)
+		if i >= 9 {
+			shortcut = rune('a' + i - 9)
+		}
+
+		mainText := fmt.Sprintf("(%s) %s", localInst.Name, localInst.Url)
+
+		s.list.AddItem(mainText, "", shortcut, func() {
 			s.onSelect(localInst)
 		})
 	}
 
 	s.list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEscape {
-			s.router.Back()
+			s.app.Stop()
 			return nil
 		}
 		return event
@@ -64,36 +85,66 @@ func (s *InstanceSelectionScreen) initList() {
 func (s *InstanceSelectionScreen) calculateDimensions() {
 	numItems := len(s.cfg.Instances)
 	if numItems == 0 {
-		s.listHeight = 5
-		s.listWidth = 30
+		s.listHeight = 20
+		s.listWidth = 40
 		return
 	}
-	s.listHeight = numItems*2 - 1 + 2
 
-	maxLen := 0
-	for i, inst := range s.cfg.Instances {
-		str := fmt.Sprintf("%d. %s (%s)", i+1, inst.Name, inst.Url)
-		if l := len(str); l > maxLen {
-			maxLen = l
+	s.listHeight = numItems*2 + 10 // More padding
+
+	maxMainLen := 0
+	for _, inst := range s.cfg.Instances {
+		if len(inst.Name) > maxMainLen {
+			maxMainLen = len(inst.Name)
 		}
 	}
-	s.listWidth = maxLen + 4
+
+	contentWidth := maxMainLen + 10
+
+	s.listWidth = contentWidth + 12
+
+	if s.listWidth < 45 {
+		s.listWidth = 45
+	}
 }
 
 func (s *InstanceSelectionScreen) Init() tview.Primitive {
-	s.list.SetRect(0, 0, s.listWidth, s.listHeight)
+	textColor := tcell.ColorYellow                 // #795200
+	backgroundColor := tcell.NewHexColor(0x000000) // #000000 for background
+	header := tview.NewTextView().
+		SetTextColor(textColor).
+		SetTextAlign(tview.AlignCenter).SetText(" ArguTUI - ArgoCD Terminal UI ")
+	header.SetBackgroundColor(backgroundColor)
 
-	verticalFlex := tview.NewFlex().SetDirection(tview.FlexRow)
-	verticalFlex.AddItem(nil, 0, 1, false)
-	verticalFlex.AddItem(s.list, s.listHeight, 0, true)
-	verticalFlex.AddItem(nil, 0, 1, false)
+	footer := tview.NewTextView().
+		SetDynamicColors(true).
+		SetText("[#017be9]↑↓[gray] Navigate  [#017be9]Enter[gray] Select  [#017be9]Esc[gray] Back").
+		SetTextAlign(tview.AlignCenter)
+	footer.SetBackgroundColor(backgroundColor)
 
-	horizontalFlex := tview.NewFlex().SetDirection(tview.FlexColumn)
-	horizontalFlex.AddItem(nil, 0, 1, false)
-	horizontalFlex.AddItem(verticalFlex, s.listWidth, 0, true)
-	horizontalFlex.AddItem(nil, 0, 1, false)
+	flex := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(header, 1, 0, false).
+		AddItem(s.list, s.listHeight, 0, true).
+		AddItem(footer, 1, 0, false)
 
-	return horizontalFlex
+	flex.SetBackgroundColor(backgroundColor)
+
+	centeredFlex := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(nil, 0, 1, false).
+		AddItem(
+			tview.NewFlex().
+				SetDirection(tview.FlexColumn).
+				AddItem(nil, 0, 1, false).
+				AddItem(flex, s.listWidth, 0, true).
+				AddItem(nil, 0, 1, false),
+			s.listHeight+2, 0, true).
+		AddItem(nil, 0, 1, false)
+
+	centeredFlex.SetBackgroundColor(backgroundColor)
+
+	return centeredFlex
 }
 
 func (s *InstanceSelectionScreen) Name() string {
