@@ -2,6 +2,7 @@ package applicationlist
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -390,9 +391,14 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 	}
 
 	if event.Key() == tcell.KeyEnter {
+		file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			fmt.Printf("Error creating log file: %v\n", err)
+			return nil
+		}
 		startTime := time.Now()
 		defer func() {
-			fmt.Printf("GetResourceTree took %s\n", time.Since(startTime))
+			fmt.Fprintf(file, "GetResourceTree took %s\n", time.Since(startTime))
 		}()
 		row, _ := s.table.GetSelection()
 		if row < 1 || row-1 >= len(s.filteredApps) {

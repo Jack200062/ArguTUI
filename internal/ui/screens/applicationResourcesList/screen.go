@@ -2,6 +2,7 @@ package applicationResourcesList
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -424,9 +425,14 @@ func (s *ScreenAppResourcesList) buildTreeFromResourceTree() error {
 }
 
 func buildTreeFromNodes(nodes []v1alpha1.ResourceNode) []*TreeResource {
+	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error creating log file: %v\n", err)
+		return nil
+	}
 	startTime := time.Now()
 	defer func() {
-		fmt.Printf("buildTreeFromNodes took %s\n", time.Since(startTime))
+		fmt.Fprintf(file, "buildTreeFromNodes took %s\n", time.Since(startTime))
 	}()
 	resourceMap := make(map[string]*TreeResource)
 	for i := range nodes {
@@ -541,9 +547,14 @@ func (s *ScreenAppResourcesList) onTableKey(event *tcell.EventKey) *tcell.EventK
 }
 
 func (s *ScreenAppResourcesList) buildOriginalNodesMap() {
+	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error creating log file: %v\n", err)
+		return
+	}
 	startTime := time.Now()
 	defer func() {
-		fmt.Printf("buildOriginalNodesMap took %s\n", time.Since(startTime))
+		fmt.Fprintf(file, "buildOriginalNodesMap took %s\n", time.Since(startTime))
 	}()
 	s.originalNodes = make(map[string]*TreeResource)
 
@@ -559,9 +570,14 @@ func (s *ScreenAppResourcesList) buildOriginalNodesMap() {
 }
 
 func (s *ScreenAppResourcesList) fillTableTreeMode() {
+	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error creating log file: %v\n", err)
+		return
+	}
 	startTime := time.Now()
 	defer func() {
-		fmt.Printf("fillTableTreeMode took %s\n", time.Since(startTime))
+		fmt.Fprintf(file, "fillTableTreeMode took %s\n", time.Since(startTime))
 	}()
 	s.footer.UpdateResourceCount(len(s.visibleResources))
 	activeFiltersText := s.filterManager.GetActiveFiltersText()

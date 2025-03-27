@@ -3,6 +3,7 @@ package argocd
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/Jack200062/ArguTUI/config"
@@ -38,9 +39,14 @@ func NewArgoCdClient(cfg *config.Instance, l *logging.Logger, ctx context.Contex
 }
 
 func (a *ArgoCdClient) GetApps() ([]Application, error) {
+	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error creating log file: %v\n", err)
+		return nil, nil
+	}
 	startTime := time.Now()
 	defer func() {
-		a.logger.Infof("GetApps took %s", time.Since(startTime))
+		fmt.Fprintf(file, "GetApps took %s", time.Since(startTime))
 	}()
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
@@ -90,9 +96,14 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 }
 
 func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
+	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error creating log file: %v\n", err)
+		return nil, nil
+	}
 	startTime := time.Now()
 	defer func() {
-		a.logger.Infof("GetAppResources took %s", time.Since(startTime))
+		fmt.Fprintf(file, "GetAppResources took %s", time.Since(startTime))
 	}()
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
@@ -148,9 +159,14 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 }
 
 func (a *ArgoCdClient) GetResourceTree(appName string) (*v1alpha1.ApplicationTree, error) {
+	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error creating log file: %v\n", err)
+		return nil, nil
+	}
 	startTime := time.Now()
 	defer func() {
-		a.logger.Infof("GetResourceTree took %s", time.Since(startTime))
+		fmt.Fprintf(file, "GetResourceTree took %s", time.Since(startTime))
 	}()
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
