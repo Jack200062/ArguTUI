@@ -3,6 +3,7 @@ package applicationResourcesList
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
 	"github.com/gdamore/tcell/v2"
@@ -46,6 +47,10 @@ func (t *TableView) Init() *tview.Table {
 }
 
 func (t *TableView) FillTableWithTree(resources []*TreeResource, activeFilters string) {
+	startTime := time.Now()
+	defer func() {
+		fmt.Printf("FillTableWithTree took %s\n", time.Since(startTime))
+	}()
 	t.table.Clear()
 	headers := []string{"Kind", "Name", "Health", "SyncStatus", "Namespace"}
 	for col, h := range headers {

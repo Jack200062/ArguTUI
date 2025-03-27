@@ -390,6 +390,10 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 	}
 
 	if event.Key() == tcell.KeyEnter {
+		startTime := time.Now()
+		defer func() {
+			fmt.Printf("GetResourceTree took %s\n", time.Since(startTime))
+		}()
 		row, _ := s.table.GetSelection()
 		if row < 1 || row-1 >= len(s.filteredApps) {
 			return event

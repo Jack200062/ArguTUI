@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime/pprof"
+	"runtime/trace"
 
 	"github.com/Jack200062/ArguTUI/config"
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
@@ -36,12 +37,14 @@ func main() {
 	pprof.StartCPUProfile(f)
 	defer pprof.StopCPUProfile()
 
-	// Здесь выполняем код приложения
-
-	// Создать профиль памяти
 	memf, _ := os.Create("memory_profile.prof")
 	defer memf.Close()
 	pprof.WriteHeapProfile(memf)
+
+	f, _ = os.Create("trace.out")
+	defer f.Close()
+	trace.Start(f)
+	defer trace.Stop()
 
 	logger := logging.NewLogger()
 	ctx, cancel := context.WithCancel(context.Background())

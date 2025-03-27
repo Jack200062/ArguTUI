@@ -424,6 +424,10 @@ func (s *ScreenAppResourcesList) buildTreeFromResourceTree() error {
 }
 
 func buildTreeFromNodes(nodes []v1alpha1.ResourceNode) []*TreeResource {
+	startTime := time.Now()
+	defer func() {
+		fmt.Printf("buildTreeFromNodes took %s\n", time.Since(startTime))
+	}()
 	resourceMap := make(map[string]*TreeResource)
 	for i := range nodes {
 		n := &nodes[i]
@@ -537,6 +541,10 @@ func (s *ScreenAppResourcesList) onTableKey(event *tcell.EventKey) *tcell.EventK
 }
 
 func (s *ScreenAppResourcesList) buildOriginalNodesMap() {
+	startTime := time.Now()
+	defer func() {
+		fmt.Printf("buildOriginalNodesMap took %s\n", time.Since(startTime))
+	}()
 	s.originalNodes = make(map[string]*TreeResource)
 
 	var addToMap func([]*TreeResource)
@@ -551,6 +559,10 @@ func (s *ScreenAppResourcesList) buildOriginalNodesMap() {
 }
 
 func (s *ScreenAppResourcesList) fillTableTreeMode() {
+	startTime := time.Now()
+	defer func() {
+		fmt.Printf("fillTableTreeMode took %s\n", time.Since(startTime))
+	}()
 	s.footer.UpdateResourceCount(len(s.visibleResources))
 	activeFiltersText := s.filterManager.GetActiveFiltersText()
 	s.tableView.FillTableWithTree(s.visibleResources, activeFiltersText)

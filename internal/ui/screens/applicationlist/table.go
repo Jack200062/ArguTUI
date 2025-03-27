@@ -2,6 +2,7 @@ package applicationlist
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
@@ -44,6 +45,10 @@ func (t *TableView) Init() *tview.Table {
 }
 
 func (t *TableView) FillTable(apps []argocd.Application, activeFilters string) {
+	timeNow := time.Now()
+	defer func() {
+		fmt.Printf("FillTable took %s\n", time.Since(timeNow))
+	}()
 	t.table.Clear()
 	headers := []string{"Name", "HealthStatus", "SyncStatus", "SyncCommit", "Project", "LastActivity"}
 	for col, h := range headers {

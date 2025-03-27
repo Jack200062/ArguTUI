@@ -3,6 +3,7 @@ package argocd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Jack200062/ArguTUI/config"
 	"github.com/Jack200062/ArguTUI/pkg/logging"
@@ -37,6 +38,10 @@ func NewArgoCdClient(cfg *config.Instance, l *logging.Logger, ctx context.Contex
 }
 
 func (a *ArgoCdClient) GetApps() ([]Application, error) {
+	startTime := time.Now()
+	defer func() {
+		a.logger.Infof("GetApps took %s", time.Since(startTime))
+	}()
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
 		return nil, a.logger.Errorf("Error creating argocd client: %v", err)
@@ -85,6 +90,10 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 }
 
 func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
+	startTime := time.Now()
+	defer func() {
+		a.logger.Infof("GetAppResources took %s", time.Since(startTime))
+	}()
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
 		return nil, a.logger.Errorf("Error creating argocd client: %v", err)
@@ -139,6 +148,10 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 }
 
 func (a *ArgoCdClient) GetResourceTree(appName string) (*v1alpha1.ApplicationTree, error) {
+	startTime := time.Now()
+	defer func() {
+		a.logger.Infof("GetResourceTree took %s", time.Since(startTime))
+	}()
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
 		return nil, a.logger.Errorf("Error creating ArgoCD application client: %v", err)
