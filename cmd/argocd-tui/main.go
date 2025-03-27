@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/pprof"
 
 	"github.com/Jack200062/ArguTUI/config"
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
@@ -15,16 +16,33 @@ import (
 	"github.com/rivo/tview"
 )
 
+// Refactor
 var (
 	Version   = "dev"
 	BuildDate = "unknown"
 )
 
+//
+
 func main() {
+	// Refactor
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
 		fmt.Printf("ArguTUI version %s (built at %s)\n", Version, BuildDate)
 		return
 	}
+	//
+	f, _ := os.Create("cpu_profile.prof")
+	defer f.Close()
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
+
+	// Здесь выполняем код приложения
+
+	// Создать профиль памяти
+	memf, _ := os.Create("memory_profile.prof")
+	defer memf.Close()
+	pprof.WriteHeapProfile(memf)
+
 	logger := logging.NewLogger()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
