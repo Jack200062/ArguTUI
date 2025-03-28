@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/Jack200062/ArguTUI/config"
+	"github.com/Jack200062/ArguTUI/internal/cache"
+	"github.com/Jack200062/ArguTUI/internal/models"
 	"github.com/Jack200062/ArguTUI/pkg/logging"
 	"github.com/argoproj/argo-cd/v2/pkg/apiclient"
 	"github.com/argoproj/argo-cd/v2/pkg/apiclient/application"
@@ -14,13 +16,14 @@ import (
 )
 
 type ArgoCdClient struct {
-	cfg    *config.Instance
-	client apiclient.Client
-	logger *logging.Logger
-	ctx    context.Context
+	cfg          *config.Instance
+	cacheManager *cache.CacheManager
+	client       apiclient.Client
+	logger       *logging.Logger
+	ctx          context.Context
 }
 
-func NewArgoCdClient(cfg *config.Instance, l *logging.Logger, ctx context.Context) *ArgoCdClient {
+func NewArgoCdClient(cfg *config.Instance, l *logging.Logger, ctx context.Context, cache *cache.CacheManager) *ArgoCdClient {
 	clientOpt := &apiclient.ClientOptions{
 		Insecure:   cfg.InsecureSkipVerify,
 		ServerAddr: cfg.Url,
@@ -31,14 +34,15 @@ func NewArgoCdClient(cfg *config.Instance, l *logging.Logger, ctx context.Contex
 		l.Fatal("Error creating ArgoCD client: %v", err)
 	}
 	return &ArgoCdClient{
-		cfg:    cfg,
-		client: c,
-		logger: l,
-		ctx:    ctx,
+		cfg:          cfg,
+		client:       c,
+		logger:       l,
+		ctx:          ctx,
+		cacheManager: cache,
 	}
 }
 
-func (a *ArgoCdClient) GetApps() ([]Application, error) {
+func (a *ArgoCdClient) GetApps() ([]models.Application, error) {
 	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Printf("Error creating log file: %v\n", err)
@@ -46,8 +50,14 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 	}
 	startTime := time.Now()
 	defer func() {
-		fmt.Fprintf(file, "GetApps took %s", time.Since(startTime))
+		fmt.Fprintf(file, "GetApps took %s\n", time.Since(startTime))
 	}()
+
+	if apps, found := a.cacheManager.GetAppList(a.cfg.Name); found {
+		fmt.Fprintf(file, "---------- Cache hit for app list: %d apps -----------\n", len(apps))
+		return apps, nil
+	}
+
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
 		return nil, a.logger.Errorf("Error creating argocd client: %v", err)
@@ -57,7 +67,7 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 		return nil, a.logger.Errorf("Error getting application list: %v", err)
 	}
 
-	var apps []Application
+	var apps []models.Application
 	for _, app := range appList.Items {
 		var lastSyncTime string
 
@@ -83,7 +93,7 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 			syncCommit = syncCommit[:7]
 		}
 
-		apps = append(apps, Application{
+		apps = append(apps, models.Application{
 			Name:         app.Name,
 			HealthStatus: string(app.Status.Health.Status),
 			SyncStatus:   string(app.Status.Sync.Status),
@@ -92,10 +102,13 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 			LastActivity: lastSyncTime,
 		})
 	}
+
+	a.cacheManager.SetAppList(a.cfg.Name, apps, a.cacheManager.DefaultExpiration)
+
 	return apps, nil
 }
 
-func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
+func (a *ArgoCdClient) GetAppResources(appName string) ([]models.Resource, error) {
 	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Printf("Error creating log file: %v\n", err)
@@ -103,7 +116,7 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 	}
 	startTime := time.Now()
 	defer func() {
-		fmt.Fprintf(file, "GetAppResources took %s", time.Since(startTime))
+		fmt.Fprintf(file, "GetAppResources took %s\n", time.Since(startTime))
 	}()
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
@@ -115,6 +128,12 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 		return nil, a.logger.Errorf("Error getting resource tree for %s: %v", appName, err)
 	}
 
+	if resources, found := a.cacheManager.GetResources(a.cfg.Name, appName); found {
+		fmt.Fprintf(file, "------------ Cache hit for resources: %d resources -------------\n", len(resources))
+		return resources, nil
+	}
+
+	fmt.Fprintf(file, "ASDAADDSADSDSDASDASSDSASDADS\n")
 	resList, err := appClient.ManagedResources(a.ctx, &application.ResourcesQuery{
 		ApplicationName: &appName,
 	})
@@ -132,7 +151,7 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 		}
 	}
 
-	var resources []Resource
+	var resources []models.Resource
 	for _, res := range resList.Items {
 		key := fmt.Sprintf("%s/%s/%s/%s", res.Group, res.Kind, res.Namespace, res.Name)
 
@@ -146,7 +165,7 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 			syncStatus = "OutOfSync"
 		}
 
-		resources = append(resources, Resource{
+		resources = append(resources, models.Resource{
 			Kind:         res.Kind,
 			Name:         res.Name,
 			Namespace:    res.Namespace,
@@ -154,6 +173,8 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 			SyncStatus:   syncStatus,
 		})
 	}
+
+	a.cacheManager.SetResources(a.cfg.Name, appName, resources, a.cacheManager.DefaultExpiration)
 
 	return resources, nil
 }
@@ -166,7 +187,7 @@ func (a *ArgoCdClient) GetResourceTree(appName string) (*v1alpha1.ApplicationTre
 	}
 	startTime := time.Now()
 	defer func() {
-		fmt.Fprintf(file, "GetResourceTree took %s", time.Since(startTime))
+		fmt.Fprintf(file, "GetResourceTree took %s\n", time.Since(startTime))
 	}()
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
@@ -175,10 +196,19 @@ func (a *ArgoCdClient) GetResourceTree(appName string) (*v1alpha1.ApplicationTre
 	query := &application.ResourcesQuery{
 		ApplicationName: &appName,
 	}
+
+	if tree, found := a.cacheManager.GetResourceTree(a.cfg.Name, appName); found {
+		fmt.Fprintf(file, "------------ Cache hit for resource tree -------------\n")
+		return tree, nil
+	}
+
 	tree, err := appClient.ResourceTree(a.ctx, query)
 	if err != nil {
 		return nil, a.logger.Errorf("Error getting resource tree for %s: %v", appName, err)
 	}
+
+	a.cacheManager.SetResourceTree(a.cfg.Name, appName, tree, a.cacheManager.DefaultExpiration)
+
 	return tree, nil
 }
 

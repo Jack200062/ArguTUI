@@ -13,7 +13,7 @@ type TopBar struct {
 	view             *tview.Flex
 	instanceInfo     *common.InstanceInfo
 	statsView        *tview.TextView
-	instanceView     *tview.TextView
+	instanceInfoView *tview.TextView
 	backgroundColor  tcell.Color
 	shortcutKeyColor tcell.Color
 	textColor        tcell.Color
@@ -29,18 +29,16 @@ func NewTopBar(instanceInfo *common.InstanceInfo, backgroundColor, shortcutKeyCo
 }
 
 func (t *TopBar) Init() tview.Primitive {
-	instanceView := tview.NewTextView().
+	instanceInfoView := tview.NewTextView().
 		SetDynamicColors(true).
 		SetText(t.instanceInfo.FormattedString(tcell.ColorYellow)).
 		SetTextAlign(tview.AlignLeft)
-	instanceView.SetBorder(false)
-	instanceView.SetBackgroundColor(t.backgroundColor)
-	t.instanceView = instanceView
+	instanceInfoView.SetBorder(false)
+	t.instanceInfoView = instanceInfoView
 
 	statsView := tview.NewTextView().
 		SetDynamicColors(true).
 		SetTextAlign(tview.AlignCenter)
-	statsView.SetBackgroundColor(t.backgroundColor)
 	t.statsView = statsView
 
 	shortcutBar := components.NewShortcutBar(t.backgroundColor, t.shortcutKeyColor)
@@ -55,13 +53,14 @@ func (t *TopBar) Init() tview.Primitive {
 		"R": "Refresh All",
 		"r": "Refresh App",
 		"c": "Clear Filters",
+		"d": "Delete App",
 	})
 
 	shortcutBarPrimitive := shortcutBar.Init()
 
 	t.view = tview.NewFlex().
 		SetDirection(tview.FlexColumn).
-		AddItem(instanceView, 0, 1, false).
+		AddItem(instanceInfoView, 0, 1, false).
 		AddItem(statsView, 0, 1, false).
 		AddItem(shortcutBarPrimitive, 0, 2, false)
 	t.view.SetBackgroundColor(t.backgroundColor)
@@ -70,10 +69,6 @@ func (t *TopBar) Init() tview.Primitive {
 }
 
 func (t *TopBar) UpdateStats(healthy, degraded, outOfSync int) {
-	if t.statsView == nil {
-		return
-	}
-
 	t.statsView.SetText(fmt.Sprintf("[green]Healthy: %d  [red]Degraded: %d  [yellow]OutOfSync: %d",
 		healthy, degraded, outOfSync))
 }

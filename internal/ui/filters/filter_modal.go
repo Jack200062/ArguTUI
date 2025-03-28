@@ -178,9 +178,5 @@ func (m *BaseFilterModal) Show() {
 }
 
 func (m *BaseFilterModal) Close() {
-	if m.asOverlay {
-		m.app.SetRoot(m.returnApp, true)
-	} else {
-		m.app.SetRoot(m.returnApp, true)
-	}
+	m.app.SetRoot(m.returnApp, true)
 }

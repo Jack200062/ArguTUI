@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Jack200062/ArguTUI/internal/models"
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
@@ -45,8 +46,8 @@ type ScreenAppResourcesList struct {
 	pages     *tview.Pages
 	searchBar *components.SimpleSearchBar
 
-	resources        []argocd.Resource
-	filteredResults  []argocd.Resource
+	resources        []models.Resource
+	filteredResults  []models.Resource
 	rootResources    []*TreeResource
 	visibleResources []*TreeResource
 	selectedAppName  string
@@ -66,7 +67,7 @@ type ScreenAppResourcesList struct {
 
 func New(
 	app *tview.Application,
-	resources []argocd.Resource,
+	resources []models.Resource,
 	selectedAppName string,
 	r *ui.Router,
 	instanceInfo *common.InstanceInfo,
@@ -74,6 +75,7 @@ func New(
 ) *ScreenAppResourcesList {
 	var healthStatus, syncStatus string
 
+	// GEt APP HEALTH STATUS AND SYNC STATUS FROM PREVIOUS SCREEN
 	apps, err := client.GetApps()
 	if err == nil {
 		for _, app := range apps {
@@ -96,7 +98,7 @@ func New(
 		filteredResults: resources,
 		selectedAppName: selectedAppName,
 		originalNodes:   make(map[string]*TreeResource),
-		allExpanded:     true,
+		allExpanded:     false,
 		appHealthStatus: healthStatus,
 		appSyncStatus:   syncStatus,
 	}
@@ -203,11 +205,11 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 	s.filterManager.SetFilterChangedHandler(s.onFiltersChanged)
 
 	s.helpView = components.NewHelpView()
-	s.helpView.View.SetInputCapture(s.helpView.GetInputCapture(func() {
+	s.helpView.Grid.SetInputCapture(s.helpView.GetInputCapture(func() {
 		s.pages.SwitchToPage("main")
 		s.app.SetFocus(s.table)
 	}))
-	s.pages.AddPage("help", s.helpView.View, true, false)
+	s.pages.AddPage("help", s.helpView.Grid, true, false)
 
 	s.table.SetInputCapture(s.onTableKey)
 
@@ -257,6 +259,7 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 	return s.pages
 }
 
+// REFACTOR
 func (s *ScreenAppResourcesList) onFiltersChanged(activeFilters []filters.FilterState) {
 	var kindFilter, healthFilter, syncFilter string
 
@@ -489,7 +492,7 @@ func (s *ScreenAppResourcesList) onTableKey(event *tcell.EventKey) *tcell.EventK
 		return nil
 	case '?':
 		s.pages.SwitchToPage("help")
-		s.app.SetFocus(s.helpView.View)
+		s.app.SetFocus(s.helpView.Grid)
 		return nil
 	case 'f', 'F':
 		s.filterManager.ShowFilterMenu()

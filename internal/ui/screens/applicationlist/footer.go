@@ -49,7 +49,7 @@ func (f *Footer) Init() tview.Primitive {
 		f.backgroundColor,
 		f.shortcutKeyColor,
 	)
-	footer.AddItem(shortcutsView, 0, 2, false)
+	footer.AddItem(shortcutsView, 0, 1, false)
 
 	timeView := tview.NewTextView().
 		SetDynamicColors(true).
@@ -89,10 +89,6 @@ func (f *Footer) Stop() {
 }
 
 func (f *Footer) UpdateTimeInfo(lastRefreshTime time.Time) {
-	if f.timeView == nil {
-		return
-	}
-
 	f.lastRefreshTime = lastRefreshTime
 
 	now := time.Now()

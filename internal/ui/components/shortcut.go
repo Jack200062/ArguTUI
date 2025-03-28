@@ -65,6 +65,7 @@ func (s *ShortcutBar) Init() tview.Primitive {
 	return flex
 }
 
+// Footer shortcuts
 func NewHorizontalShortcutBar(shortcuts map[string]string, backgroundColor, shortcutKeyColor tcell.Color) *tview.TextView {
 	var textBuilder strings.Builder
 
@@ -80,12 +81,4 @@ func NewHorizontalShortcutBar(shortcuts map[string]string, backgroundColor, shor
 	shortcutsView.SetBackgroundColor(backgroundColor)
 
 	return shortcutsView
-}
-
-func ShortcutBar_Old() *tview.TextView {
-	text := tview.NewTextView().
-		SetText(" q Quit ? Help \n  d Details  b Go back ").
-		SetTextAlign(tview.AlignLeft).
-		SetTextColor(tcell.ColorYellow)
-	return text
 }

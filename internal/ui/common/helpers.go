@@ -44,7 +44,7 @@ func SetRowColor(table *tview.Table, row, columns int, color tcell.Color) {
 
 func SetupExitHandler(tviewApp *tview.Application, router *ui.Router) {
 	tviewApp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if (event.Rune() == 'q' || event.Key() == tcell.KeyCtrlC || event.Key() == tcell.KeyEsc) && !router.IsModalActive() {
+		if event.Rune() == 'q' || event.Key() == tcell.KeyCtrlC || event.Key() == tcell.KeyEsc {
 			modal := tview.NewModal().
 				SetText("Are you sure you want to close?").
 				AddButtons([]string{"Yes", "No"}).
@@ -56,7 +56,7 @@ func SetupExitHandler(tviewApp *tview.Application, router *ui.Router) {
 					}
 				}).SetButtonTextColor(tcell.NewHexColor(0x017be9))
 
-			backgroundColor := tcell.NewHexColor(0x000000)
+			backgroundColor := tcell.NewHexColor(0x1c1c1c)
 			textColor := tcell.NewHexColor(0x805700)
 
 			modal.SetBackgroundColor(backgroundColor)

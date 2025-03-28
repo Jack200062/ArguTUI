@@ -6,8 +6,10 @@ import (
 	"os"
 	"runtime/pprof"
 	"runtime/trace"
+	"time"
 
 	"github.com/Jack200062/ArguTUI/config"
+	"github.com/Jack200062/ArguTUI/internal/cache"
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
@@ -60,13 +62,19 @@ func main() {
 		logger.Fatal("Failed to init config: %v", err)
 	}
 
+	defaultCacheExpiration := time.Duration(60 * time.Minute)
+	cleanupInterval := time.Duration(10 * time.Minute)
+	cacheManager := cache.NewCacheManager(defaultCacheExpiration, cleanupInterval, logger)
+	// DURING DEVELOPMENT
+	defer cacheManager.Flush()
+
 	tviewApp := tview.NewApplication()
 	router := ui.NewRouter(tviewApp)
 
 	switchToInstance := func(inst *config.Instance) {
 		instanceInfo := common.NewInstanceInfo(inst.Url, inst.Name)
 
-		argocdClient := argocd.NewArgoCdClient(inst, logger, ctx)
+		argocdClient := argocd.NewArgoCdClient(inst, logger, ctx, cacheManager)
 
 		apps, err := argocdClient.GetApps()
 		if err != nil {

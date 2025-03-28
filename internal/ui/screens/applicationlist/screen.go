@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Jack200062/ArguTUI/internal/models"
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
@@ -20,7 +21,7 @@ import (
 type ScreenAppList struct {
 	app          *tview.Application
 	instanceInfo *common.InstanceInfo
-	apps         []argocd.Application
+	apps         []models.Application
 	client       *argocd.ArgoCdClient
 	router       *ui.Router
 
@@ -28,7 +29,7 @@ type ScreenAppList struct {
 	table        *tview.Table
 	pages        *tview.Pages
 	searchBar    *components.SimpleSearchBar
-	filteredApps []argocd.Application
+	filteredApps []models.Application
 
 	projectFilter   string
 	healthFilter    string
@@ -47,7 +48,7 @@ func New(
 	c *argocd.ArgoCdClient,
 	r *ui.Router,
 	instanceInfo *common.InstanceInfo,
-	apps []argocd.Application,
+	apps []models.Application,
 ) *ScreenAppList {
 	if instanceInfo == nil {
 		instanceInfo = common.NewInstanceInfo("n/a", "n/a")
@@ -93,9 +94,9 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	s.tableView = NewTableView(textColor, borderColor, backgroundColor, selectedBgColor)
 
 	topBarPrimitive := s.topBar.Init()
-
 	healthy, degraded, outOfSync := s.getApplicationStats()
 	s.topBar.UpdateStats(healthy, degraded, outOfSync)
+
 	footerPrimitive := s.footer.Init()
 	s.footer.UpdateTimeInfo(s.lastRefreshTime)
 
@@ -107,8 +108,7 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	s.tableView.FillTable(s.filteredApps, s.getActiveFiltersText())
 
 	s.grid = tview.NewGrid().
-		SetRows(4, 0, 1). // header (topbar), table, footer
-		SetColumns(0).
+		SetRows(5, 0, 1). // header (topbar), table, footer
 		SetBorders(true)
 	s.grid.AddItem(topBarPrimitive, 0, 0, 1, 1, 0, 0, false).
 		AddItem(s.table, 1, 0, 1, 1, 0, 0, true).
@@ -118,11 +118,11 @@ func (s *ScreenAppList) Init() tview.Primitive {
 		AddPage("main", s.grid, true, true)
 
 	s.helpView = components.NewHelpView()
-	s.helpView.View.SetInputCapture(s.helpView.GetInputCapture(func() {
+	s.helpView.Grid.SetInputCapture(s.helpView.GetInputCapture(func() {
 		s.pages.SwitchToPage("main")
 		s.app.SetFocus(s.table)
 	}))
-	s.pages.AddPage("help", s.helpView.View, true, false)
+	s.pages.AddPage("help", s.helpView.Grid, true, false)
 
 	s.grid.SetInputCapture(s.onGridKey)
 
@@ -142,6 +142,8 @@ func (s *ScreenAppList) startAutoRefresh() {
 	}()
 }
 
+// Adjust this func. Check diff between cache and actual state in go rouitine
+// in order to not block main thread
 func (s *ScreenAppList) refreshApps() {
 	newApps, err := s.client.GetApps()
 	if err != nil {
@@ -149,6 +151,7 @@ func (s *ScreenAppList) refreshApps() {
 	}
 	s.lastRefreshTime = time.Now()
 	s.apps = newApps
+	// In order to not reset search filters
 	s.applyFilters()
 
 	healthy, degraded, outOfSync := s.getApplicationStats()
@@ -160,7 +163,7 @@ func (s *ScreenAppList) applyFilters() {
 	filteredApps := s.apps
 
 	if s.projectFilter != "" {
-		var filtered []argocd.Application
+		var filtered []models.Application
 		for _, app := range filteredApps {
 			if app.Project == s.projectFilter {
 				filtered = append(filtered, app)
@@ -170,7 +173,7 @@ func (s *ScreenAppList) applyFilters() {
 	}
 
 	if s.healthFilter != "" {
-		var filtered []argocd.Application
+		var filtered []models.Application
 		for _, app := range filteredApps {
 			if strings.EqualFold(app.HealthStatus, s.healthFilter) {
 				filtered = append(filtered, app)
@@ -180,7 +183,7 @@ func (s *ScreenAppList) applyFilters() {
 	}
 
 	if s.syncFilter != "" {
-		var filtered []argocd.Application
+		var filtered []models.Application
 		for _, app := range filteredApps {
 			if strings.EqualFold(app.SyncStatus, s.syncFilter) {
 				filtered = append(filtered, app)
@@ -260,8 +263,8 @@ func (s *ScreenAppList) searchDone(key tcell.Key) {
 	}
 }
 
-func filterApplications(apps []argocd.Application, query string) []argocd.Application {
-	var filtered []argocd.Application
+func filterApplications(apps []models.Application, query string) []models.Application {
+	var filtered []models.Application
 	lowerQuery := strings.ToLower(query)
 	for _, app := range apps {
 		if strings.Contains(app.SearchString(), lowerQuery) {

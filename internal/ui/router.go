@@ -4,7 +4,6 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -124,20 +123,4 @@ func (r *Router) CloseModal() {
 	}
 	r.isModal = false
 	r.app.SetRoot(r.current.Init(), true)
-}
-
-func (r *Router) IsModalActive() bool {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.isModal
-}
-
-func (r *Router) ResetHistory() {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	r.history = make([]string, 0)
-}
-
-func (r *Router) SetGlobalInputCapture(callback func(event *tcell.EventKey) *tcell.EventKey) {
-	r.app.SetInputCapture(callback)
 }
