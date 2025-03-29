@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Jack200062/ArguTUI/internal/cache"
 	"github.com/Jack200062/ArguTUI/internal/models"
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
@@ -41,6 +42,9 @@ type ScreenAppList struct {
 	footer    *Footer
 	tableView *TableView
 	helpView  *components.HelpView
+
+	preloadManager *PreloadManager
+	cacheManager   *cache.CacheManager
 }
 
 func New(
@@ -49,12 +53,13 @@ func New(
 	r *ui.Router,
 	instanceInfo *common.InstanceInfo,
 	apps []models.Application,
+	cacheManager *cache.CacheManager,
 ) *ScreenAppList {
 	if instanceInfo == nil {
 		instanceInfo = common.NewInstanceInfo("n/a", "n/a")
 	}
 
-	return &ScreenAppList{
+	appListScreen := &ScreenAppList{
 		app:             app,
 		client:          c,
 		router:          r,
@@ -62,7 +67,16 @@ func New(
 		apps:            apps,
 		filteredApps:    apps,
 		lastRefreshTime: time.Now(),
+		cacheManager:    cacheManager,
 	}
+
+	preloadManager := NewPreloadManager(10, c, appListScreen.cacheManager, instanceInfo.Name)
+	appListScreen.preloadManager = preloadManager
+
+	appListScreen.preloadManager.Init()
+	appListScreen.preloadManager.StartPreload(apps)
+
+	return appListScreen
 }
 
 func (s *ScreenAppList) getApplicationStats() (healthy, degraded, outOfSync int) {

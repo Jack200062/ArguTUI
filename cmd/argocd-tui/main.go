@@ -82,7 +82,7 @@ func main() {
 			return
 		}
 
-		appList := applicationlist.New(tviewApp, argocdClient, router, instanceInfo, apps)
+		appList := applicationlist.New(tviewApp, argocdClient, router, instanceInfo, apps, cacheManager)
 		router.AddScreen(appList)
 		router.SwitchTo(appList.Name())
 	}
