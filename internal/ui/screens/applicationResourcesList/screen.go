@@ -480,6 +480,7 @@ func (s *ScreenAppResourcesList) onTableKey(event *tcell.EventKey) *tcell.EventK
 	case 't':
 		s.toggleExpansionAll()
 		return nil
+		//TODO: Search via child resources as well?
 	case '/', ':':
 		s.showSearchBar()
 		return nil
@@ -490,7 +491,7 @@ func (s *ScreenAppResourcesList) onTableKey(event *tcell.EventKey) *tcell.EventK
 		s.pages.SwitchToPage("help")
 		s.app.SetFocus(s.helpView.Grid)
 	}
-
+	// TODO: Doesnt expandFully, only one depth
 	if event.Key() == tcell.KeyEnter {
 		row, _ := s.table.GetSelection()
 		if row > 0 && row-1 < len(s.visibleResources) {
@@ -581,5 +582,5 @@ func mapKeysToSortedSlice(m map[string]bool) []string {
 }
 
 func (s *ScreenAppResourcesList) Name() string {
-	return "ApplicationResourcesList"
+	return fmt.Sprintf("ApplicationResourcesList-%s", s.selectedApp.Name)
 }
