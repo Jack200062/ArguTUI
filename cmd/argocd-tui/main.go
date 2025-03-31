@@ -62,8 +62,8 @@ func main() {
 		logger.Fatal("Failed to init config: %v", err)
 	}
 
-	defaultCacheExpiration := time.Duration(60 * time.Minute)
-	cleanupInterval := time.Duration(10 * time.Minute)
+	defaultCacheExpiration := time.Duration(10 * time.Minute)
+	cleanupInterval := time.Duration(5 * time.Minute)
 	cacheManager := cache.NewCacheManager(defaultCacheExpiration, cleanupInterval, logger)
 	// DURING DEVELOPMENT
 	defer cacheManager.Flush()

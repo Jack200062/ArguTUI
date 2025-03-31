@@ -12,7 +12,6 @@ import (
 	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
 	"github.com/Jack200062/ArguTUI/internal/ui/components"
-	"github.com/Jack200062/ArguTUI/internal/ui/filters"
 	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -55,11 +54,10 @@ type ScreenAppResourcesList struct {
 
 	originalNodes map[string]*TreeResource
 
-	topBar        *TopBar
-	tableView     *TableView
-	footer        *Footer
-	helpView      *components.HelpView
-	filterManager *filters.ResourceFilterManager
+	topBar    *TopBar
+	tableView *TableView
+	footer    *Footer
+	helpView  *components.HelpView
 
 	appHealthStatus string
 	appSyncStatus   string
@@ -201,9 +199,6 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 	s.pages = tview.NewPages().
 		AddPage("main", s.grid, true, true)
 
-	s.filterManager = filters.NewResourceFilterManager(s.app, s.pages)
-	s.filterManager.SetFilterChangedHandler(s.onFiltersChanged)
-
 	s.helpView = components.NewHelpView()
 	s.helpView.Grid.SetInputCapture(s.helpView.GetInputCapture(func() {
 		s.pages.SwitchToPage("main")
@@ -218,8 +213,6 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 	}
 
 	s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
-
-	rootKindTypes := s.extractRootKindFilters()
 
 	healthStatuses := make(map[string]bool)
 	syncStatuses := make(map[string]bool)
@@ -249,89 +242,11 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 	}
 	sort.Strings(syncStatusList)
 
-	s.filterManager = filters.NewResourceFilterManager(s.app, s.pages)
-	s.filterManager.SetFilterChangedHandler(s.onFiltersChanged)
-	s.filterManager.ExtractKindsFromResources(rootKindTypes)
-	s.filterManager.SetHealthStatuses(healthStatusList)
-	s.filterManager.SetSyncStatuses(syncStatusList)
-
 	s.fillTableTreeMode()
 	return s.pages
 }
 
 // REFACTOR
-func (s *ScreenAppResourcesList) onFiltersChanged(activeFilters []filters.FilterState) {
-	var kindFilter, healthFilter, syncFilter string
-
-	for _, filter := range activeFilters {
-		switch filter.Type {
-		case filters.ResourceKindFilter:
-			kindFilter = filter.Value
-		case filters.HealthFilter:
-			healthFilter = filter.Value
-		case filters.SyncFilter:
-			syncFilter = filter.Value
-		}
-	}
-
-	_ = s.buildTreeFromResourceTree()
-
-	if kindFilter != "" {
-		s.filterResourcesByKind(kindFilter)
-	} else if healthFilter != "" || syncFilter != "" {
-		s.filterResourcesByStatus(healthFilter, syncFilter)
-	} else {
-		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
-	}
-
-	s.fillTableTreeMode()
-}
-
-func (s *ScreenAppResourcesList) filterResourcesByKind(kindFilter string) {
-	if kindFilter == "" {
-		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
-		return
-	}
-
-	var filteredRoots []*TreeResource
-
-	for _, root := range s.rootResources {
-		if root.Kind == kindFilter {
-			rootCopy := *root
-			rootCopy.Expanded = true
-			filteredRoots = append(filteredRoots, &rootCopy)
-		}
-	}
-
-	if len(filteredRoots) > 0 {
-		s.visibleResources = flattenResourcesWithLines(filteredRoots, 0, nil)
-	} else {
-		s.showToast(fmt.Sprintf("No root resources of type %s found", kindFilter), 2*time.Second)
-		s.filterManager.SetFilter(filters.ResourceKindFilter, "")
-		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
-	}
-}
-
-func (s *ScreenAppResourcesList) filterResourcesByStatus(healthFilter, syncFilter string) {
-	if healthFilter == "" && syncFilter == "" {
-		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
-		return
-	}
-
-	allNodes := flattenResourcesWithLines(s.rootResources, 0, nil)
-	var filtered []*TreeResource
-
-	for _, node := range allNodes {
-		healthMatch := healthFilter == "" || strings.EqualFold(node.Health, healthFilter)
-		syncMatch := syncFilter == "" || strings.EqualFold(node.SyncStatus, syncFilter)
-
-		if healthMatch && syncMatch {
-			filtered = append(filtered, node)
-		}
-	}
-
-	s.visibleResources = filtered
-}
 
 func (s *ScreenAppResourcesList) toggleExpansionAll() {
 	if s.allExpanded {
@@ -493,35 +408,6 @@ func (s *ScreenAppResourcesList) onTableKey(event *tcell.EventKey) *tcell.EventK
 	case '?':
 		s.pages.SwitchToPage("help")
 		s.app.SetFocus(s.helpView.Grid)
-		return nil
-	case 'f', 'F':
-		s.filterManager.ShowFilterMenu()
-		return nil
-	case 'd', 'D':
-		s.filterManager.ToggleFilter(filters.ResourceKindFilter, "Deployment")
-		return nil
-	case 's', 'S':
-		s.filterManager.ToggleFilter(filters.ResourceKindFilter, "Service")
-		return nil
-	case 'i', 'I':
-		s.filterManager.ToggleFilter(filters.ResourceKindFilter, "Ingress")
-		return nil
-	case 'c', 'C':
-		if event.Rune() == 'C' {
-			s.filterManager.ClearFilters()
-		} else {
-			s.filterManager.ToggleFilter(filters.ResourceKindFilter, "ConfigMap")
-		}
-		return nil
-	case 'h', 'H':
-		s.filterManager.ToggleFilter(filters.HealthFilter, "Healthy")
-		return nil
-	case 'p', 'P':
-		s.filterManager.ToggleFilter(filters.HealthFilter, "Progressing")
-		return nil
-	case 'o', 'O':
-		s.filterManager.ToggleFilter(filters.SyncFilter, "OutOfSync")
-		return nil
 	}
 
 	if event.Key() == tcell.KeyEnter {
@@ -583,8 +469,6 @@ func (s *ScreenAppResourcesList) fillTableTreeMode() {
 		fmt.Fprintf(file, "fillTableTreeMode took %s\n", time.Since(startTime))
 	}()
 	s.footer.UpdateResourceCount(len(s.visibleResources))
-	activeFiltersText := s.filterManager.GetActiveFiltersText()
-	s.tableView.FillTableWithTree(s.visibleResources, activeFiltersText)
 }
 
 func (s *ScreenAppResourcesList) showToast(message string, duration time.Duration) {

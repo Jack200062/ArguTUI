@@ -52,6 +52,13 @@ func (s *CacheManager) SetAppList(instanceName string, apps []models.Application
 	s.logger.Debugf("Cached app list for instance %s (%d apps)", instanceName, len(apps))
 }
 
+func (s *CacheManager) InvalidateAppList(instanceName string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	key := AppListPrefix + instanceName
+	s.cache.Delete(key)
+}
+
 func (s *CacheManager) GetResources(instanceName, appName string) ([]models.Resource, bool) {
 	key := ResourcesPrefix + instanceName + ":" + appName
 	if data, found := s.cache.Get(key); found {

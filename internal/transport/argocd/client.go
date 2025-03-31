@@ -133,7 +133,6 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]models.Resource, error
 		return resources, nil
 	}
 
-	fmt.Fprintf(file, "ASDAADDSADSDSDASDASSDSASDADS\n")
 	resList, err := appClient.ManagedResources(a.ctx, &application.ResourcesQuery{
 		ApplicationName: &appName,
 	})
@@ -226,6 +225,8 @@ func (a *ArgoCdClient) RefreshApp(appName string, refreshType string) error {
 		return a.logger.Errorf("Error refreshing app %s: %v", appName, err)
 	}
 
+	a.cacheManager.InvalidateAppList(a.cfg.Name)
+
 	return nil
 }
 
@@ -241,6 +242,8 @@ func (a *ArgoCdClient) SyncApp(appName string) error {
 	if err != nil {
 		return a.logger.Errorf("Error syncing app %s: %v", appName, err)
 	}
+
+	a.cacheManager.InvalidateAppList(a.cfg.Name)
 	return nil
 }
 
@@ -256,5 +259,7 @@ func (a *ArgoCdClient) DeleteApp(appName string) error {
 	if err != nil {
 		return a.logger.Errorf("Error deleting app %s: %v", appName, err)
 	}
+
+	a.cacheManager.InvalidateAppList(a.cfg.Name)
 	return nil
 }

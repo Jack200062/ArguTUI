@@ -45,6 +45,13 @@ type ScreenAppList struct {
 
 	preloadManager *PreloadManager
 	cacheManager   *cache.CacheManager
+
+	filterCategories struct {
+		projectList []string
+		healthList  []string
+		syncList    []string
+	}
+	activeFilters []filters.Filter
 }
 
 func New(
@@ -69,6 +76,8 @@ func New(
 		lastRefreshTime: time.Now(),
 		cacheManager:    cacheManager,
 	}
+
+	appListScreen.updateFilterCategories()
 
 	preloadManager := NewPreloadManager(10, c, appListScreen.cacheManager, instanceInfo.Name)
 	appListScreen.preloadManager = preloadManager
@@ -315,12 +324,10 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case 'r':
 		row, _ := s.table.GetSelection()
-		if row < 1 || row-1 >= len(s.filteredApps) {
-			return event
-		}
 		selectedApp := s.filteredApps[row-1]
 		err := s.client.RefreshApp(selectedApp.Name, "normal")
 		if err != nil {
+			// Just as show.RefreshErrorModal or smthing
 			modal := components.ErrorModal(
 				fmt.Sprintf("Error refreshing app %s:", selectedApp.Name),
 				err.Error(),
@@ -506,6 +513,64 @@ func (s *ScreenAppList) showToast(message string, duration time.Duration) {
 }
 
 func (s *ScreenAppList) showFilterMenu() {
+	s.updateFilterCategories()
+
+	filterCategories := []filters.FilterCategory{
+		{
+			Type:      filters.FilterTypeProject,
+			Title:     "Project",
+			Options:   s.filterCategories.projectList,
+			Shortcuts: map[string]rune{},
+		},
+		{
+			Type:      filters.FilterTypeHealth,
+			Title:     "Health",
+			Options:   s.filterCategories.healthList,
+			Shortcuts: map[string]rune{},
+		},
+		{
+			Type:      filters.FilterTypeSync,
+			Title:     "Sync",
+			Options:   s.filterCategories.syncList,
+			Shortcuts: map[string]rune{},
+		},
+	}
+
+	activeFilters := []filters.Filter{}
+
+	filters.ShowFilterModal(
+		s.app,
+		s.pages,
+		filterCategories,
+		activeFilters,
+		func(result filters.FilterModalResult) {
+			if len(result.Filters) == 0 {
+				s.projectFilter = ""
+				s.healthFilter = ""
+				s.syncFilter = ""
+				s.applyFilters()
+				return
+			}
+			if !result.Canceled {
+				for _, filter := range result.Filters {
+					switch filter.Type {
+					case filters.FilterTypeProject:
+						s.projectFilter = filter.Value
+					case filters.FilterTypeHealth:
+						s.healthFilter = filter.Value
+					case filters.FilterTypeSync:
+						s.syncFilter = filter.Value
+					}
+				}
+			}
+
+			s.activeFilters = result.Filters
+			s.applyFilters()
+		},
+	)
+}
+
+func (s *ScreenAppList) updateFilterCategories() {
 	projects := make(map[string]bool)
 	healthStatuses := make(map[string]bool)
 	syncStatuses := make(map[string]bool)
@@ -516,104 +581,18 @@ func (s *ScreenAppList) showFilterMenu() {
 		syncStatuses[app.SyncStatus] = true
 	}
 
-	projectList := make([]string, 0, len(projects))
-	for project := range projects {
-		projectList = append(projectList, project)
+	s.filterCategories.projectList = mapKeysToSortedSlice(projects)
+	s.filterCategories.healthList = mapKeysToSortedSlice(healthStatuses)
+	s.filterCategories.syncList = mapKeysToSortedSlice(syncStatuses)
+}
+
+func mapKeysToSortedSlice(m map[string]bool) []string {
+	result := make([]string, 0, len(m))
+	for key := range m {
+		result = append(result, key)
 	}
-	sort.Strings(projectList)
-
-	healthList := make([]string, 0, len(healthStatuses))
-	for status := range healthStatuses {
-		healthList = append(healthList, status)
-	}
-	sort.Strings(healthList)
-
-	syncList := make([]string, 0, len(syncStatuses))
-	for status := range syncStatuses {
-		syncList = append(syncList, status)
-	}
-	sort.Strings(syncList)
-
-	filterCategories := []filters.FilterCategory{
-		{
-			Title:     "Project",
-			Type:      filters.ProjectFilter,
-			Options:   projectList,
-			Shortcuts: map[string]rune{},
-		},
-		{
-			Title:     "Health Status",
-			Type:      filters.HealthFilter,
-			Options:   healthList,
-			Shortcuts: filters.StandardHealthShortcuts(),
-		},
-		{
-			Title:     "Sync Status",
-			Type:      filters.SyncFilter,
-			Options:   syncList,
-			Shortcuts: filters.StandardSyncShortcuts(),
-		},
-	}
-
-	activeFilters := []filters.FilterState{}
-
-	if s.projectFilter != "" {
-		activeFilters = append(activeFilters, filters.FilterState{
-			Type:  filters.ProjectFilter,
-			Value: s.projectFilter,
-		})
-	}
-
-	if s.healthFilter != "" {
-		activeFilters = append(activeFilters, filters.FilterState{
-			Type:  filters.HealthFilter,
-			Value: s.healthFilter,
-		})
-	}
-
-	if s.syncFilter != "" {
-		activeFilters = append(activeFilters, filters.FilterState{
-			Type:  filters.SyncFilter,
-			Value: s.syncFilter,
-		})
-	}
-
-	filters.ShowMultiFilterMenu(
-		s.app,
-		filters.MultiFilterOptions{
-			Title:         "FILTER APPLICATIONS",
-			ActiveFilters: activeFilters,
-			Categories:    filterCategories,
-			AsOverlay:     true,
-			Position: filters.OverlayPosition{
-				Top:    3,  // Padding from top
-				Left:   10, // Padding from left
-				Right:  10, // Padding from right
-				Bottom: 5,  // Padding from bottom
-			},
-		},
-		s.pages,
-		func(result filters.FilterResult) {
-			if !result.Canceled {
-				s.projectFilter = ""
-				s.healthFilter = ""
-				s.syncFilter = ""
-
-				for _, filter := range result.Filters {
-					switch filter.Type {
-					case filters.ProjectFilter:
-						s.projectFilter = filter.Value
-					case filters.HealthFilter:
-						s.healthFilter = filter.Value
-					case filters.SyncFilter:
-						s.syncFilter = filter.Value
-					}
-				}
-
-				s.applyFilters()
-			}
-		},
-	)
+	sort.Strings(result)
+	return result
 }
 
 func (s *ScreenAppList) Name() string {

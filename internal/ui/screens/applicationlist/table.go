@@ -2,8 +2,6 @@ package applicationlist
 
 import (
 	"fmt"
-	"os"
-	"time"
 
 	"github.com/Jack200062/ArguTUI/internal/models"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
@@ -46,15 +44,6 @@ func (t *TableView) Init() *tview.Table {
 }
 
 func (t *TableView) FillTable(apps []models.Application, activeFilters string) {
-	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Printf("Error creating log file: %v\n", err)
-		return
-	}
-	timeNow := time.Now()
-	defer func() {
-		fmt.Fprintf(file, "FillTable took %s\n", time.Since(timeNow))
-	}()
 	t.table.Clear()
 	headers := []string{"Name", "HealthStatus", "SyncStatus", "SyncCommit", "Project", "LastActivity"}
 	for col, h := range headers {
