@@ -3,6 +3,7 @@ package filters
 import (
 	"strings"
 
+	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -17,6 +18,7 @@ func ShowFilterModal(
 	pages *tview.Pages,
 	categories []FilterCategory,
 	activeFilters []Filter,
+	router *ui.Router,
 	onResult func(FilterModalResult),
 ) {
 	currentFilters := make([]Filter, len(activeFilters))
@@ -24,7 +26,7 @@ func ShowFilterModal(
 
 	ui := createFilterUI(currentFilters)
 
-	setupHandlers(app, pages, ui, categories, activeFilters, onResult)
+	setupHandlers(app, pages, ui, router, categories, activeFilters, onResult)
 
 	pages.AddPage("filter_modal", ui.flex, true, true)
 
@@ -59,8 +61,6 @@ func createFilterUI(currentFilters []Filter) *filterUI {
 
 	ui.modal = tview.NewFlex().SetDirection(tview.FlexRow)
 	ui.currentFilters = currentFilters
-
-	ui.title = tview.NewTextView()
 
 	ui.activeFiltersView = tview.NewTextView().
 		SetText("Active filters: None").
@@ -104,7 +104,6 @@ func createFilterUI(currentFilters []Filter) *filterUI {
 	ui.contentArea.AddItem(ui.categoriesList, 0, 1, true)
 	ui.contentArea.AddItem(ui.optionsList, 0, 2, false)
 
-	ui.modal.AddItem(ui.title, 1, 0, false)
 	ui.modal.AddItem(ui.activeFiltersView, 1, 0, false)
 	ui.modal.AddItem(ui.contentArea, 0, 1, true)
 	ui.modal.AddItem(ui.footer, 1, 0, false)
@@ -136,6 +135,7 @@ func setupHandlers(
 	app *tview.Application,
 	pages *tview.Pages,
 	ui *filterUI,
+	router *ui.Router,
 	categories []FilterCategory,
 	activeFilters []Filter,
 	onResult func(FilterModalResult),
@@ -148,7 +148,7 @@ func setupHandlers(
 
 	setupOptionsKeyHandler(app, ui)
 
-	setupGlobalKeyHandler(ui, activeFilters, onResult, pages, ui.modalFrame)
+	setupGlobalKeyHandler(ui, activeFilters, onResult, pages, ui.modalFrame, router)
 }
 
 func addCategoryItems(
@@ -157,6 +157,7 @@ func addCategoryItems(
 	onResult func(FilterModalResult),
 	pages *tview.Pages,
 ) {
+	//TODO: Using runes? First letter as rune, check on race conditions ('q' or 'c')
 	for _, category := range categories {
 		ui.categoriesList.AddItem(category.Title, "", 0, nil)
 	}
@@ -262,6 +263,7 @@ func setupGlobalKeyHandler(
 	onResult func(FilterModalResult),
 	pages *tview.Pages,
 	frame *tview.Frame,
+	router *ui.Router,
 ) {
 	ui.flex.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEscape {
@@ -270,6 +272,15 @@ func setupGlobalKeyHandler(
 				Canceled: true,
 			})
 			pages.RemovePage("filter_modal")
+			router.CloseModal()
+			return nil
+		} else if event.Rune() == 'q' || event.Rune() == 'Q' {
+			onResult(FilterModalResult{
+				Filters:  activeFilters,
+				Canceled: true,
+			})
+			pages.RemovePage("filter_modal")
+			router.CloseModal()
 			return nil
 		}
 		return event

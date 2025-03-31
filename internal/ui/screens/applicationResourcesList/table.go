@@ -2,9 +2,7 @@ package applicationResourcesList
 
 import (
 	"fmt"
-	"os"
 	"strings"
-	"time"
 
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
 	"github.com/gdamore/tcell/v2"
@@ -48,15 +46,6 @@ func (t *TableView) Init() *tview.Table {
 }
 
 func (t *TableView) FillTableWithTree(resources []*TreeResource, activeFilters string) {
-	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Printf("Error creating log file: %v\n", err)
-		return
-	}
-	startTime := time.Now()
-	defer func() {
-		fmt.Fprintf(file, "FillTableWithTree took %s\n", time.Since(startTime))
-	}()
 	t.table.Clear()
 	headers := []string{"Kind", "Name", "Health", "SyncStatus", "Namespace"}
 	for col, h := range headers {

@@ -102,6 +102,12 @@ func (r *Router) Back() error {
 	return nil
 }
 
+func (r *Router) IsModalActive() bool {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	return r.isModal
+}
+
 func (r *Router) Current() Screen {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()

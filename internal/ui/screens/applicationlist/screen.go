@@ -2,7 +2,6 @@ package applicationlist
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -32,16 +31,13 @@ type ScreenAppList struct {
 	searchBar    *components.SimpleSearchBar
 	filteredApps []models.Application
 
-	projectFilter   string
-	healthFilter    string
-	syncFilter      string
-	searchQuery     string
 	lastRefreshTime time.Time
 
-	topBar    *TopBar
-	footer    *Footer
-	tableView *TableView
-	helpView  *components.HelpView
+	topBar      *TopBar
+	footer      *Footer
+	tableView   *TableView
+	helpView    *components.HelpView
+	searchQuery string
 
 	preloadManager *PreloadManager
 	cacheManager   *cache.CacheManager
@@ -52,6 +48,9 @@ type ScreenAppList struct {
 		syncList    []string
 	}
 	activeFilters []filters.Filter
+	projectFilter string
+	healthFilter  string
+	syncFilter    string
 }
 
 func New(
@@ -84,7 +83,6 @@ func New(
 
 	appListScreen.preloadManager.Init()
 	appListScreen.preloadManager.StartPreload(apps)
-
 	return appListScreen
 }
 
@@ -123,7 +121,7 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	footerPrimitive := s.footer.Init()
 	s.footer.UpdateTimeInfo(s.lastRefreshTime)
 
-	s.searchBar = components.NewSimpleSearchBar("🐙 ", 0)
+	s.searchBar = components.NewSimpleSearchBar("🐙 => ", 0)
 	s.initLiveSearch()
 	s.searchBar.InputField.SetDoneFunc(s.searchDone)
 
@@ -415,15 +413,6 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 	}
 
 	if event.Key() == tcell.KeyEnter {
-		file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			fmt.Printf("Error creating log file: %v\n", err)
-			return nil
-		}
-		startTime := time.Now()
-		defer func() {
-			fmt.Fprintf(file, "GetResourceTree took %s\n", time.Since(startTime))
-		}()
 		row, _ := s.table.GetSelection()
 		if row < 1 || row-1 >= len(s.filteredApps) {
 			return event
@@ -439,7 +428,7 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 			s.app.SetRoot(modal, true)
 			return nil
 		}
-		resScreen := applicationResourcesList.New(s.app, resources, selectedApp.Name, s.router, s.instanceInfo, s.client)
+		resScreen := applicationResourcesList.New(s.app, resources, s.router, s.instanceInfo, s.client, &selectedApp)
 		s.router.AddScreen(resScreen)
 		s.router.SwitchTo(resScreen.Name())
 		return nil
@@ -543,6 +532,7 @@ func (s *ScreenAppList) showFilterMenu() {
 		s.pages,
 		filterCategories,
 		activeFilters,
+		s.router,
 		func(result filters.FilterModalResult) {
 			if len(result.Filters) == 0 {
 				s.projectFilter = ""
