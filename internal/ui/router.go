@@ -3,10 +3,12 @@ package ui
 import (
 	"errors"
 	"sync"
+	"time"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
+
+const ScreenExpirationTime = time.Hour
 
 type Screen interface {
 	Name() string
@@ -14,22 +16,68 @@ type Screen interface {
 }
 
 type Router struct {
-	app     *tview.Application
-	screens map[string]Screen
-	current Screen
-	history []string
-	mutex   sync.RWMutex
-	isModal bool
+	app            *tview.Application
+	screens        map[string]Screen
+	current        Screen
+	history        []string
+	mutex          sync.RWMutex
+	isModal        bool
+	screenCreation map[string]time.Time
+	cleanupTicker  *time.Ticker
 }
 
 func NewRouter(app *tview.Application) *Router {
 	if app == nil {
 		panic("tview.Application cannot be nil")
 	}
-	return &Router{
-		app:     app,
-		screens: make(map[string]Screen),
-		history: make([]string, 0),
+
+	r := &Router{
+		app:            app,
+		screens:        make(map[string]Screen),
+		history:        make([]string, 0),
+		screenCreation: make(map[string]time.Time),
+	}
+
+	r.cleanupTicker = time.NewTicker(10 * time.Minute)
+	go r.cleanupRoutine()
+
+	return r
+}
+
+func (r *Router) cleanupRoutine() {
+	for range r.cleanupTicker.C {
+		r.cleanupExpiredScreens()
+	}
+}
+
+func (r *Router) Shutdown() {
+	if r.cleanupTicker != nil {
+		r.cleanupTicker.Stop()
+	}
+}
+
+func (r *Router) cleanupExpiredScreens() {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	now := time.Now()
+	for name, creationTime := range r.screenCreation {
+		if now.Sub(creationTime) > ScreenExpirationTime {
+			if r.current != nil && r.current.Name() == name {
+				r.screenCreation[name] = now
+				continue
+			}
+
+			delete(r.screens, name)
+			delete(r.screenCreation, name)
+
+			for i := 0; i < len(r.history); i++ {
+				if r.history[i] == name {
+					r.history = append(r.history[:i], r.history[i+1:]...)
+					i--
+				}
+			}
+		}
 	}
 }
 
@@ -51,6 +99,8 @@ func (r *Router) AddScreen(s Screen) error {
 	}
 
 	r.screens[name] = s
+	r.screenCreation[name] = time.Now()
+
 	if r.current == nil {
 		r.current = s
 	}
@@ -74,6 +124,7 @@ func (r *Router) SwitchTo(name string) error {
 		r.history = append(r.history, r.current.Name())
 	}
 	r.current = screen
+	r.screenCreation[name] = time.Now()
 	r.app.SetRoot(screen.Init(), true)
 	return nil
 }
@@ -103,6 +154,12 @@ func (r *Router) Back() error {
 	return nil
 }
 
+func (r *Router) IsModalActive() bool {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	return r.isModal
+}
+
 func (r *Router) Current() Screen {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
@@ -124,20 +181,4 @@ func (r *Router) CloseModal() {
 	}
 	r.isModal = false
 	r.app.SetRoot(r.current.Init(), true)
-}
-
-func (r *Router) IsModalActive() bool {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.isModal
-}
-
-func (r *Router) ResetHistory() {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	r.history = make([]string, 0)
-}
-
-func (r *Router) SetGlobalInputCapture(callback func(event *tcell.EventKey) *tcell.EventKey) {
-	r.app.SetInputCapture(callback)
 }

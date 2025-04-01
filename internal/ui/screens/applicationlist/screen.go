@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Jack200062/ArguTUI/internal/cache"
+	"github.com/Jack200062/ArguTUI/internal/models"
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
@@ -19,7 +21,7 @@ import (
 type ScreenAppList struct {
 	app          *tview.Application
 	instanceInfo *common.InstanceInfo
-	apps         []argocd.Application
+	apps         []models.Application
 	client       *argocd.ArgoCdClient
 	router       *ui.Router
 
@@ -27,18 +29,28 @@ type ScreenAppList struct {
 	table        *tview.Table
 	pages        *tview.Pages
 	searchBar    *components.SimpleSearchBar
-	filteredApps []argocd.Application
+	filteredApps []models.Application
 
-	projectFilter   string
-	healthFilter    string
-	syncFilter      string
-	searchQuery     string
 	lastRefreshTime time.Time
 
-	topBar    *TopBar
-	footer    *Footer
-	tableView *TableView
-	helpView  *components.HelpView
+	topBar      *TopBar
+	footer      *Footer
+	tableView   *TableView
+	helpView    *components.HelpView
+	searchQuery string
+
+	preloadManager *PreloadManager
+	cacheManager   *cache.CacheManager
+
+	filterCategories struct {
+		projectList []string
+		healthList  []string
+		syncList    []string
+	}
+	activeFilters []filters.Filter
+	projectFilter string
+	healthFilter  string
+	syncFilter    string
 }
 
 func New(
@@ -46,13 +58,14 @@ func New(
 	c *argocd.ArgoCdClient,
 	r *ui.Router,
 	instanceInfo *common.InstanceInfo,
-	apps []argocd.Application,
+	apps []models.Application,
+	cacheManager *cache.CacheManager,
 ) *ScreenAppList {
 	if instanceInfo == nil {
 		instanceInfo = common.NewInstanceInfo("n/a", "n/a")
 	}
 
-	return &ScreenAppList{
+	appListScreen := &ScreenAppList{
 		app:             app,
 		client:          c,
 		router:          r,
@@ -60,7 +73,17 @@ func New(
 		apps:            apps,
 		filteredApps:    apps,
 		lastRefreshTime: time.Now(),
+		cacheManager:    cacheManager,
 	}
+
+	appListScreen.updateFilterCategories()
+
+	preloadManager := NewPreloadManager(10, c, appListScreen.cacheManager, instanceInfo.Name)
+	appListScreen.preloadManager = preloadManager
+
+	appListScreen.preloadManager.Init()
+	appListScreen.preloadManager.StartPreload(apps)
+	return appListScreen
 }
 
 func (s *ScreenAppList) getApplicationStats() (healthy, degraded, outOfSync int) {
@@ -92,13 +115,13 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	s.tableView = NewTableView(textColor, borderColor, backgroundColor, selectedBgColor)
 
 	topBarPrimitive := s.topBar.Init()
-
 	healthy, degraded, outOfSync := s.getApplicationStats()
 	s.topBar.UpdateStats(healthy, degraded, outOfSync)
+
 	footerPrimitive := s.footer.Init()
 	s.footer.UpdateTimeInfo(s.lastRefreshTime)
 
-	s.searchBar = components.NewSimpleSearchBar("🐙 ", 0)
+	s.searchBar = components.NewSimpleSearchBar("🐙 => ", 0)
 	s.initLiveSearch()
 	s.searchBar.InputField.SetDoneFunc(s.searchDone)
 
@@ -106,8 +129,7 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	s.tableView.FillTable(s.filteredApps, s.getActiveFiltersText())
 
 	s.grid = tview.NewGrid().
-		SetRows(4, 0, 1). // header (topbar), table, footer
-		SetColumns(0).
+		SetRows(5, 0, 1). // header (topbar), table, footer
 		SetBorders(true)
 	s.grid.AddItem(topBarPrimitive, 0, 0, 1, 1, 0, 0, false).
 		AddItem(s.table, 1, 0, 1, 1, 0, 0, true).
@@ -117,11 +139,11 @@ func (s *ScreenAppList) Init() tview.Primitive {
 		AddPage("main", s.grid, true, true)
 
 	s.helpView = components.NewHelpView()
-	s.helpView.View.SetInputCapture(s.helpView.GetInputCapture(func() {
+	s.helpView.Grid.SetInputCapture(s.helpView.GetInputCapture(func() {
 		s.pages.SwitchToPage("main")
 		s.app.SetFocus(s.table)
 	}))
-	s.pages.AddPage("help", s.helpView.View, true, false)
+	s.pages.AddPage("help", s.helpView.Grid, true, false)
 
 	s.grid.SetInputCapture(s.onGridKey)
 
@@ -141,6 +163,8 @@ func (s *ScreenAppList) startAutoRefresh() {
 	}()
 }
 
+// Adjust this func. Check diff between cache and actual state in go rouitine
+// in order to not block main thread
 func (s *ScreenAppList) refreshApps() {
 	newApps, err := s.client.GetApps()
 	if err != nil {
@@ -148,6 +172,7 @@ func (s *ScreenAppList) refreshApps() {
 	}
 	s.lastRefreshTime = time.Now()
 	s.apps = newApps
+	// In order to not reset search filters
 	s.applyFilters()
 
 	healthy, degraded, outOfSync := s.getApplicationStats()
@@ -159,7 +184,7 @@ func (s *ScreenAppList) applyFilters() {
 	filteredApps := s.apps
 
 	if s.projectFilter != "" {
-		var filtered []argocd.Application
+		var filtered []models.Application
 		for _, app := range filteredApps {
 			if app.Project == s.projectFilter {
 				filtered = append(filtered, app)
@@ -169,7 +194,7 @@ func (s *ScreenAppList) applyFilters() {
 	}
 
 	if s.healthFilter != "" {
-		var filtered []argocd.Application
+		var filtered []models.Application
 		for _, app := range filteredApps {
 			if strings.EqualFold(app.HealthStatus, s.healthFilter) {
 				filtered = append(filtered, app)
@@ -179,7 +204,7 @@ func (s *ScreenAppList) applyFilters() {
 	}
 
 	if s.syncFilter != "" {
-		var filtered []argocd.Application
+		var filtered []models.Application
 		for _, app := range filteredApps {
 			if strings.EqualFold(app.SyncStatus, s.syncFilter) {
 				filtered = append(filtered, app)
@@ -259,8 +284,8 @@ func (s *ScreenAppList) searchDone(key tcell.Key) {
 	}
 }
 
-func filterApplications(apps []argocd.Application, query string) []argocd.Application {
-	var filtered []argocd.Application
+func filterApplications(apps []models.Application, query string) []models.Application {
+	var filtered []models.Application
 	lowerQuery := strings.ToLower(query)
 	for _, app := range apps {
 		if strings.Contains(app.SearchString(), lowerQuery) {
@@ -297,12 +322,10 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case 'r':
 		row, _ := s.table.GetSelection()
-		if row < 1 || row-1 >= len(s.filteredApps) {
-			return event
-		}
 		selectedApp := s.filteredApps[row-1]
 		err := s.client.RefreshApp(selectedApp.Name, "normal")
 		if err != nil {
+			// Just as show.RefreshErrorModal or smthing
 			modal := components.ErrorModal(
 				fmt.Sprintf("Error refreshing app %s:", selectedApp.Name),
 				err.Error(),
@@ -405,7 +428,7 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 			s.app.SetRoot(modal, true)
 			return nil
 		}
-		resScreen := applicationResourcesList.New(s.app, resources, selectedApp.Name, s.router, s.instanceInfo, s.client)
+		resScreen := applicationResourcesList.New(s.app, resources, s.router, s.instanceInfo, s.client, &selectedApp)
 		s.router.AddScreen(resScreen)
 		s.router.SwitchTo(resScreen.Name())
 		return nil
@@ -479,6 +502,65 @@ func (s *ScreenAppList) showToast(message string, duration time.Duration) {
 }
 
 func (s *ScreenAppList) showFilterMenu() {
+	s.updateFilterCategories()
+
+	filterCategories := []filters.FilterCategory{
+		{
+			Type:      filters.FilterTypeProject,
+			Title:     "Project",
+			Options:   s.filterCategories.projectList,
+			Shortcuts: map[string]rune{},
+		},
+		{
+			Type:      filters.FilterTypeHealth,
+			Title:     "Health",
+			Options:   s.filterCategories.healthList,
+			Shortcuts: map[string]rune{},
+		},
+		{
+			Type:      filters.FilterTypeSync,
+			Title:     "Sync",
+			Options:   s.filterCategories.syncList,
+			Shortcuts: map[string]rune{},
+		},
+	}
+
+	activeFilters := []filters.Filter{}
+
+	filters.ShowFilterModal(
+		s.app,
+		s.pages,
+		filterCategories,
+		activeFilters,
+		s.router,
+		func(result filters.FilterModalResult) {
+			if len(result.Filters) == 0 {
+				s.projectFilter = ""
+				s.healthFilter = ""
+				s.syncFilter = ""
+				s.applyFilters()
+				return
+			}
+			if !result.Canceled {
+				for _, filter := range result.Filters {
+					switch filter.Type {
+					case filters.FilterTypeProject:
+						s.projectFilter = filter.Value
+					case filters.FilterTypeHealth:
+						s.healthFilter = filter.Value
+					case filters.FilterTypeSync:
+						s.syncFilter = filter.Value
+					}
+				}
+			}
+
+			s.activeFilters = result.Filters
+			s.applyFilters()
+		},
+	)
+}
+
+func (s *ScreenAppList) updateFilterCategories() {
 	projects := make(map[string]bool)
 	healthStatuses := make(map[string]bool)
 	syncStatuses := make(map[string]bool)
@@ -489,104 +571,18 @@ func (s *ScreenAppList) showFilterMenu() {
 		syncStatuses[app.SyncStatus] = true
 	}
 
-	projectList := make([]string, 0, len(projects))
-	for project := range projects {
-		projectList = append(projectList, project)
+	s.filterCategories.projectList = mapKeysToSortedSlice(projects)
+	s.filterCategories.healthList = mapKeysToSortedSlice(healthStatuses)
+	s.filterCategories.syncList = mapKeysToSortedSlice(syncStatuses)
+}
+
+func mapKeysToSortedSlice(m map[string]bool) []string {
+	result := make([]string, 0, len(m))
+	for key := range m {
+		result = append(result, key)
 	}
-	sort.Strings(projectList)
-
-	healthList := make([]string, 0, len(healthStatuses))
-	for status := range healthStatuses {
-		healthList = append(healthList, status)
-	}
-	sort.Strings(healthList)
-
-	syncList := make([]string, 0, len(syncStatuses))
-	for status := range syncStatuses {
-		syncList = append(syncList, status)
-	}
-	sort.Strings(syncList)
-
-	filterCategories := []filters.FilterCategory{
-		{
-			Title:     "Project",
-			Type:      filters.ProjectFilter,
-			Options:   projectList,
-			Shortcuts: map[string]rune{},
-		},
-		{
-			Title:     "Health Status",
-			Type:      filters.HealthFilter,
-			Options:   healthList,
-			Shortcuts: filters.StandardHealthShortcuts(),
-		},
-		{
-			Title:     "Sync Status",
-			Type:      filters.SyncFilter,
-			Options:   syncList,
-			Shortcuts: filters.StandardSyncShortcuts(),
-		},
-	}
-
-	activeFilters := []filters.FilterState{}
-
-	if s.projectFilter != "" {
-		activeFilters = append(activeFilters, filters.FilterState{
-			Type:  filters.ProjectFilter,
-			Value: s.projectFilter,
-		})
-	}
-
-	if s.healthFilter != "" {
-		activeFilters = append(activeFilters, filters.FilterState{
-			Type:  filters.HealthFilter,
-			Value: s.healthFilter,
-		})
-	}
-
-	if s.syncFilter != "" {
-		activeFilters = append(activeFilters, filters.FilterState{
-			Type:  filters.SyncFilter,
-			Value: s.syncFilter,
-		})
-	}
-
-	filters.ShowMultiFilterMenu(
-		s.app,
-		filters.MultiFilterOptions{
-			Title:         "FILTER APPLICATIONS",
-			ActiveFilters: activeFilters,
-			Categories:    filterCategories,
-			AsOverlay:     true,
-			Position: filters.OverlayPosition{
-				Top:    3,  // Padding from top
-				Left:   10, // Padding from left
-				Right:  10, // Padding from right
-				Bottom: 5,  // Padding from bottom
-			},
-		},
-		s.pages,
-		func(result filters.FilterResult) {
-			if !result.Canceled {
-				s.projectFilter = ""
-				s.healthFilter = ""
-				s.syncFilter = ""
-
-				for _, filter := range result.Filters {
-					switch filter.Type {
-					case filters.ProjectFilter:
-						s.projectFilter = filter.Value
-					case filters.HealthFilter:
-						s.healthFilter = filter.Value
-					case filters.SyncFilter:
-						s.syncFilter = filter.Value
-					}
-				}
-
-				s.applyFilters()
-			}
-		},
-	)
+	sort.Strings(result)
+	return result
 }
 
 func (s *ScreenAppList) Name() string {

@@ -4,8 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/pprof"
+	"runtime/trace"
+	"time"
 
 	"github.com/Jack200062/ArguTUI/config"
+	"github.com/Jack200062/ArguTUI/internal/cache"
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
@@ -15,16 +19,35 @@ import (
 	"github.com/rivo/tview"
 )
 
+// Refactor
 var (
 	Version   = "dev"
 	BuildDate = "unknown"
 )
 
+//
+
 func main() {
+	// Refactor
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
 		fmt.Printf("ArguTUI version %s (built at %s)\n", Version, BuildDate)
 		return
 	}
+	//
+	f, _ := os.Create("cpu_profile.prof")
+	defer f.Close()
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
+
+	memf, _ := os.Create("memory_profile.prof")
+	defer memf.Close()
+	pprof.WriteHeapProfile(memf)
+
+	f, _ = os.Create("trace.out")
+	defer f.Close()
+	trace.Start(f)
+	defer trace.Stop()
+
 	logger := logging.NewLogger()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -39,13 +62,19 @@ func main() {
 		logger.Fatal("Failed to init config: %v", err)
 	}
 
+	defaultCacheExpiration := time.Duration(10 * time.Minute)
+	cleanupInterval := time.Duration(5 * time.Minute)
+	cacheManager := cache.NewCacheManager(defaultCacheExpiration, cleanupInterval, logger)
+	// DURING DEVELOPMENT
+	defer cacheManager.Flush()
+
 	tviewApp := tview.NewApplication()
 	router := ui.NewRouter(tviewApp)
 
 	switchToInstance := func(inst *config.Instance) {
 		instanceInfo := common.NewInstanceInfo(inst.Url, inst.Name)
 
-		argocdClient := argocd.NewArgoCdClient(inst, logger, ctx)
+		argocdClient := argocd.NewArgoCdClient(inst, logger, ctx, cacheManager)
 
 		apps, err := argocdClient.GetApps()
 		if err != nil {
@@ -53,7 +82,7 @@ func main() {
 			return
 		}
 
-		appList := applicationlist.New(tviewApp, argocdClient, router, instanceInfo, apps)
+		appList := applicationlist.New(tviewApp, argocdClient, router, instanceInfo, apps, cacheManager)
 		router.AddScreen(appList)
 		router.SwitchTo(appList.Name())
 	}

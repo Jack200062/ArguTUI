@@ -29,22 +29,11 @@ func (info *InstanceInfo) WithAppInfo(appName, healthStatus, syncStatus string) 
 	return info
 }
 
-func (info *InstanceInfo) String() string {
-	base := fmt.Sprintf("URL: %s\nName: %s", info.URL, info.Name)
-
-	if info.AppName != "" {
-		base += fmt.Sprintf("\nApp: %s", info.AppName)
-
-		if info.HealthStatus != "" {
-			base += fmt.Sprintf(" (Health: %s)", info.HealthStatus)
-		}
-
-		if info.SyncStatus != "" {
-			base += fmt.Sprintf(" (Sync: %s)", info.SyncStatus)
-		}
-	}
-
-	return base
+func (info *InstanceInfo) ClearAppInfo() *InstanceInfo {
+	info.AppName = ""
+	info.HealthStatus = ""
+	info.SyncStatus = ""
+	return info
 }
 
 func (info *InstanceInfo) FormattedString(keyColor tcell.Color) string {

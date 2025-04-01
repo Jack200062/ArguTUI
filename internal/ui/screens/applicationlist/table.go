@@ -3,7 +3,7 @@ package applicationlist
 import (
 	"fmt"
 
-	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
+	"github.com/Jack200062/ArguTUI/internal/models"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -39,11 +39,12 @@ func (t *TableView) Init() *tview.Table {
 		SetTitleColor(t.textColor).
 		SetBorderColor(t.borderColor).
 		SetBackgroundColor(t.backgroundColor)
+	t.table.SetFixed(1, 0)
 
 	return t.table
 }
 
-func (t *TableView) FillTable(apps []argocd.Application, activeFilters string) {
+func (t *TableView) FillTable(apps []models.Application, activeFilters string) {
 	t.table.Clear()
 	headers := []string{"Name", "HealthStatus", "SyncStatus", "SyncCommit", "Project", "LastActivity"}
 	for col, h := range headers {
@@ -81,8 +82,4 @@ func (t *TableView) FillTable(apps []argocd.Application, activeFilters string) {
 
 		row++
 	}
-}
-
-func (t *TableView) GetTable() *tview.Table {
-	return t.table
 }

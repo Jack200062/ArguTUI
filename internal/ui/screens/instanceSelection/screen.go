@@ -72,39 +72,35 @@ func (s *InstanceSelectionScreen) initList() {
 			s.onSelect(localInst)
 		})
 	}
-
-	s.list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEscape {
-			s.app.Stop()
-			return nil
-		}
-		return event
-	})
 }
 
 func (s *InstanceSelectionScreen) calculateDimensions() {
 	numItems := len(s.cfg.Instances)
 	if numItems == 0 {
 		s.listHeight = 20
-		s.listWidth = 40
+		s.listWidth = 50
 		return
 	}
 
-	s.listHeight = numItems*2 + 10 // More padding
+	s.listHeight = numItems*2 + 5
+	if s.listHeight < 20 {
+		s.listHeight = 20
+	}
 
-	maxMainLen := 0
+	maxTextLen := 0
 	for _, inst := range s.cfg.Instances {
-		if len(inst.Name) > maxMainLen {
-			maxMainLen = len(inst.Name)
+		displayText := fmt.Sprintf("(%s) %s", inst.Name, inst.Url)
+		if len(displayText) > maxTextLen {
+			maxTextLen = len(displayText)
 		}
 	}
 
-	contentWidth := maxMainLen + 10
+	contentWidth := maxTextLen + 5
 
-	s.listWidth = contentWidth + 12
+	s.listWidth = contentWidth + 5
 
-	if s.listWidth < 45 {
-		s.listWidth = 45
+	if s.listWidth < 50 {
+		s.listWidth = 50
 	}
 }
 

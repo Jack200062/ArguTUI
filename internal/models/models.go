@@ -1,4 +1,4 @@
-package argocd
+package models
 
 import "strings"
 

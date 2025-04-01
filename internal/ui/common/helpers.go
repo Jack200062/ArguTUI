@@ -42,9 +42,11 @@ func SetRowColor(table *tview.Table, row, columns int, color tcell.Color) {
 	}
 }
 
+// TODO: Handle global exit. Consider adding 'q' and 'escape'
+// Problem with this is that it will be triggered on every screen
 func SetupExitHandler(tviewApp *tview.Application, router *ui.Router) {
 	tviewApp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if (event.Rune() == 'q' || event.Key() == tcell.KeyCtrlC || event.Key() == tcell.KeyEsc) && !router.IsModalActive() {
+		if event.Key() == tcell.KeyCtrlC && !router.IsModalActive() {
 			modal := tview.NewModal().
 				SetText("Are you sure you want to close?").
 				AddButtons([]string{"Yes", "No"}).
@@ -56,7 +58,7 @@ func SetupExitHandler(tviewApp *tview.Application, router *ui.Router) {
 					}
 				}).SetButtonTextColor(tcell.NewHexColor(0x017be9))
 
-			backgroundColor := tcell.NewHexColor(0x000000)
+			backgroundColor := tcell.NewHexColor(0x1c1c1c)
 			textColor := tcell.NewHexColor(0x805700)
 
 			modal.SetBackgroundColor(backgroundColor)

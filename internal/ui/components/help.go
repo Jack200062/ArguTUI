@@ -9,7 +9,7 @@ import (
 )
 
 type HelpView struct {
-	View            *tview.TextView
+	Grid            *tview.Grid
 	backgroundColor tcell.Color
 	textColor       tcell.Color
 	headerColor     tcell.Color
@@ -21,7 +21,7 @@ type HelpSection struct {
 	Shortcuts map[string]string
 }
 
-func NewHelpView(options ...func(*HelpView)) *HelpView {
+func NewHelpView() *HelpView {
 	defaultBgColor := tcell.ColorBlack
 	defaultTextColor := tcell.ColorWhite
 	defaultHeaderColor := tcell.ColorYellow
@@ -34,54 +34,9 @@ func NewHelpView(options ...func(*HelpView)) *HelpView {
 		keyColor:        defaultKeyColor,
 	}
 
-	for _, option := range options {
-		option(helpView)
-	}
-
-	helpView.createView()
-
-	helpView.View.SetText(helpView.RenderHelp())
+	helpView.Grid = helpView.renderHelp()
 
 	return helpView
-}
-
-func WithBackgroundColor(color tcell.Color) func(*HelpView) {
-	return func(h *HelpView) {
-		h.backgroundColor = color
-	}
-}
-
-func WithTextColor(color tcell.Color) func(*HelpView) {
-	return func(h *HelpView) {
-		h.textColor = color
-	}
-}
-
-func WithHeaderColor(color tcell.Color) func(*HelpView) {
-	return func(h *HelpView) {
-		h.headerColor = color
-	}
-}
-
-func WithKeyColor(color tcell.Color) func(*HelpView) {
-	return func(h *HelpView) {
-		h.keyColor = color
-	}
-}
-
-func (h *HelpView) createView() {
-	h.View = tview.NewTextView().
-		SetDynamicColors(true).
-		SetTextAlign(tview.AlignLeft).
-		SetWrap(true)
-	h.View.SetBorder(true).
-		SetTitle(" Help ").
-		SetTitleAlign(tview.AlignCenter)
-
-	h.View.SetBackgroundColor(h.backgroundColor)
-	h.View.SetTextColor(h.textColor)
-	h.View.SetBorderColor(h.keyColor)
-	h.View.SetTitleColor(h.headerColor)
 }
 
 func (h *HelpView) GenerateSections() []HelpSection {
@@ -133,32 +88,49 @@ func (h *HelpView) GenerateSections() []HelpSection {
 	}
 }
 
-func (h *HelpView) RenderHelp() string {
-	var helpText strings.Builder
+func (h *HelpView) renderHelp() *tview.Grid {
 
-	helpText.WriteString(fmt.Sprintf("[%s::b]ArguTUI - KEYBOARD SHORTCUTS[-:-:-]\n\n", h.headerColor))
+	h.Grid = tview.NewGrid().
+		SetBorders(false).
+		SetRows(0, 2)
 
-	for _, section := range h.GenerateSections() {
-		helpText.WriteString(fmt.Sprintf("[%s::b]%s:[-:-:-]\n", h.headerColor, section.Title))
+	h.Grid.SetTitle(fmt.Sprintf(" [%s::b]ArguTUI - KEYBOARD SHORTCUTS[-:-:-] ", h.headerColor)).
+		SetBorder(true).
+		SetTitleAlign(tview.AlignCenter).
+		SetBackgroundColor(h.backgroundColor).
+		SetTitleColor(h.headerColor)
 
-		for key, desc := range section.Shortcuts {
-			helpText.WriteString(fmt.Sprintf("[%s]%s[%s] %s\n",
+	sections := h.GenerateSections()
+	for i := 0; i < len(sections); i++ {
+		view := tview.NewTextView().
+			SetDynamicColors(true).
+			SetTextAlign(tview.AlignLeft).
+			SetWrap(true)
+
+		var sectionText strings.Builder
+
+		sectionText.WriteString(fmt.Sprintf("[%s::b]%s:[-:-:-]\n", h.headerColor, sections[i].Title))
+
+		for key, desc := range sections[i].Shortcuts {
+			sectionText.WriteString(fmt.Sprintf("[%s]%s[%s] %s\n",
 				h.keyColor.String(),
 				key,
 				h.textColor.String(),
 				desc))
 		}
-		helpText.WriteString("\n")
+
+		view.SetText(sectionText.String())
+		h.Grid.AddItem(view, 0, i, 1, 1, 0, 0, false)
 	}
 
-	helpText.WriteString("\n[" + h.keyColor.String() + "]Press '?' to close this help screen[-:-:-]")
+	closeHintView := tview.NewTextView().
+		SetDynamicColors(true).
+		SetTextAlign(tview.AlignCenter).
+		SetText("\n[" + h.keyColor.String() + "]Press '?' to close this help screen[-:-:-]")
 
-	return helpText.String()
-}
+	h.Grid.AddItem(closeHintView, 1, 0, 1, len(sections), 0, 0, false)
 
-func (h *HelpView) Render() *tview.TextView {
-	h.View.SetText(h.RenderHelp())
-	return h.View
+	return h.Grid
 }
 
 func (h *HelpView) GetInputCapture(onClose func()) func(event *tcell.EventKey) *tcell.EventKey {
