@@ -332,12 +332,18 @@ func buildTreeFromNodes(nodes []v1alpha1.ResourceNode, resourceStatuses []v1alph
 		}
 		statusMap[key] = status
 	}
-
-	hasChildren := make(map[string]bool)
+	// Need this to avoid showing replicasets without pods
+	// Check for having child refs doesnt work, since there can be some meta resources mapped to replicaset
+	hasPods := make(map[string]bool)
 	for i := range nodes {
 		n := &nodes[i]
-		for _, parent := range n.ParentRefs {
-			hasChildren[parent.UID] = true
+		if n.ResourceRef.Kind == "Pod" {
+			for _, parent := range n.ParentRefs {
+				parentNode := findNodeByUID(nodes, parent.UID)
+				if parentNode != nil && parentNode.ResourceRef.Kind == "ReplicaSet" {
+					hasPods[parent.UID] = true
+				}
+			}
 		}
 	}
 
@@ -387,7 +393,7 @@ func buildTreeFromNodes(nodes []v1alpha1.ResourceNode, resourceStatuses []v1alph
 			}
 
 			if parentNode != nil && parentNode.ResourceRef.Kind == "Deployment" &&
-				n.ResourceRef.Kind == "ReplicaSet" && !hasChildren[n.UID] {
+				n.ResourceRef.Kind == "ReplicaSet" && !hasPods[n.UID] {
 				continue
 			}
 
