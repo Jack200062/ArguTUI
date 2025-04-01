@@ -39,6 +39,7 @@ func (t *TableView) Init() *tview.Table {
 		SetTitleColor(t.textColor).
 		SetBorderColor(t.borderColor).
 		SetBackgroundColor(t.backgroundColor)
+	t.table.SetFixed(1, 0)
 
 	return t.table
 }
