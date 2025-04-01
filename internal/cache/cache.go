@@ -59,6 +59,30 @@ func (s *CacheManager) InvalidateAppList(instanceName string) {
 	s.cache.Delete(key)
 }
 
+func (s *CacheManager) GetApp(instanceName, appName string) (*v1alpha1.Application, bool) {
+	key := AppPrefix + instanceName + ":" + appName
+	if data, found := s.cache.Get(key); found {
+		if app, ok := data.(*v1alpha1.Application); ok {
+			return app, true
+		}
+	}
+	return nil, false
+}
+
+func (s *CacheManager) SetApp(instanceName, appName string, app *v1alpha1.Application, expiration time.Duration) {
+	key := AppPrefix + instanceName + ":" + appName
+	appCopy := &v1alpha1.Application{}
+	*appCopy = *app
+	s.cache.Set(key, appCopy, expiration)
+}
+
+func (s *CacheManager) InvalidateApp(instanceName, appName string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	key := AppPrefix + instanceName + ":" + appName
+	s.cache.Delete(key)
+}
+
 func (s *CacheManager) GetResources(instanceName, appName string) ([]models.Resource, bool) {
 	key := ResourcesPrefix + instanceName + ":" + appName
 	if data, found := s.cache.Get(key); found {
@@ -94,6 +118,21 @@ func (s *CacheManager) SetResourceTree(instanceName, appName string, tree *v1alp
 	key := ResourceTreePrefix + instanceName + ":" + appName
 
 	s.cache.Set(key, tree, expiration)
+}
+
+func (s *CacheManager) GetResourceStatuses(instanceName, appName string) ([]v1alpha1.ResourceStatus, bool) {
+	key := ResourcesPrefix + instanceName + ":" + appName + ":statuses"
+	if data, found := s.cache.Get(key); found {
+		if statuses, ok := data.([]v1alpha1.ResourceStatus); ok {
+			return statuses, true
+		}
+	}
+	return nil, false
+}
+
+func (s *CacheManager) SetResourceStatuses(instanceName, appName string, statuses []v1alpha1.ResourceStatus, expiration time.Duration) {
+	key := ResourcesPrefix + instanceName + ":" + appName + ":statuses"
+	s.cache.Set(key, statuses, expiration)
 }
 
 func (s *CacheManager) Flush() {

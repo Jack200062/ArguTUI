@@ -42,6 +42,38 @@ func NewArgoCdClient(cfg *config.Instance, l *logging.Logger, ctx context.Contex
 	}
 }
 
+func (a *ArgoCdClient) GetApp(query *application.ApplicationQuery) (*v1alpha1.Application, error) {
+	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error creating log file: %v\n", err)
+		return nil, nil
+	}
+	startTime := time.Now()
+	defer func() {
+		fmt.Fprintf(file, "GetApp took %s\n", time.Since(startTime))
+	}()
+
+	if app, found := a.cacheManager.GetApp(a.cfg.Name, *query.Name); found {
+		fmt.Fprintf(file, "---------- Cache hit for app: %s -----------\n", *query.Name)
+		return app, nil
+	}
+
+	_, appClient, err := a.client.NewApplicationClient()
+	if err != nil {
+		return nil, a.logger.Errorf("Error creating argocd client: %v", err)
+	}
+	app, err := appClient.Get(a.ctx, query)
+	if err != nil {
+		return nil, a.logger.Errorf("Error getting application: %v", err)
+	}
+
+	a.cacheManager.SetApp(a.cfg.Name, *query.Name, app, a.cacheManager.DefaultExpiration)
+
+	return app, nil
+}
+
+// TODO: Remove business logic from this function
+// From All functions
 func (a *ArgoCdClient) GetApps() ([]models.Application, error) {
 	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -123,7 +155,7 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]models.Resource, error
 		return nil, a.logger.Errorf("Error creating argocd client: %v", err)
 	}
 
-	tree, err := a.GetResourceTree(appName)
+	tree, _, err := a.GetResourceTree(appName)
 	if err != nil {
 		return nil, a.logger.Errorf("Error getting resource tree for %s: %v", appName, err)
 	}
@@ -178,11 +210,11 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]models.Resource, error
 	return resources, nil
 }
 
-func (a *ArgoCdClient) GetResourceTree(appName string) (*v1alpha1.ApplicationTree, error) {
+func (a *ArgoCdClient) GetResourceTree(appName string) (*v1alpha1.ApplicationTree, []v1alpha1.ResourceStatus, error) {
 	file, err := os.OpenFile("performance.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Printf("Error creating log file: %v\n", err)
-		return nil, nil
+		return nil, nil, nil
 	}
 	startTime := time.Now()
 	defer func() {
@@ -190,25 +222,38 @@ func (a *ArgoCdClient) GetResourceTree(appName string) (*v1alpha1.ApplicationTre
 	}()
 	_, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
-		return nil, a.logger.Errorf("Error creating ArgoCD application client: %v", err)
+		return nil, nil, a.logger.Errorf("Error creating ArgoCD application client: %v", err)
 	}
-	query := &application.ResourcesQuery{
+
+	appQuery := &application.ApplicationQuery{
+		Name: &appName,
+	}
+	app, err := appClient.Get(a.ctx, appQuery)
+	if err != nil {
+		return nil, nil, a.logger.Errorf("Error getting application %s: %v", appName, err)
+	}
+
+	treeQuery := &application.ResourcesQuery{
 		ApplicationName: &appName,
 	}
 
 	if tree, found := a.cacheManager.GetResourceTree(a.cfg.Name, appName); found {
 		fmt.Fprintf(file, "------------ Cache hit for resource tree -------------\n")
-		return tree, nil
+
+		if statuses, found := a.cacheManager.GetResourceStatuses(a.cfg.Name, appName); found {
+			return tree, statuses, nil
+		}
 	}
 
-	tree, err := appClient.ResourceTree(a.ctx, query)
+	tree, err := appClient.ResourceTree(a.ctx, treeQuery)
 	if err != nil {
-		return nil, a.logger.Errorf("Error getting resource tree for %s: %v", appName, err)
+		return nil, nil, a.logger.Errorf("Error getting resource tree for %s: %v", appName, err)
 	}
 
 	a.cacheManager.SetResourceTree(a.cfg.Name, appName, tree, a.cacheManager.DefaultExpiration)
+	a.cacheManager.SetResourceStatuses(a.cfg.Name, appName, app.Status.Resources, a.cacheManager.DefaultExpiration)
 
-	return tree, nil
+	return tree, app.Status.Resources, nil
 }
 
 func (a *ArgoCdClient) RefreshApp(appName string, refreshType string) error {
