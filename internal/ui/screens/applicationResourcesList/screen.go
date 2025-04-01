@@ -392,8 +392,7 @@ func buildTreeFromNodes(nodes []v1alpha1.ResourceNode, resourceStatuses []v1alph
 				continue
 			}
 
-			if parentNode != nil && parentNode.ResourceRef.Kind == "Deployment" &&
-				n.ResourceRef.Kind == "ReplicaSet" && !hasPods[n.UID] {
+			if parentNode != nil && n.ResourceRef.Kind == "ReplicaSet" && !hasPods[n.UID] {
 				continue
 			}
 
