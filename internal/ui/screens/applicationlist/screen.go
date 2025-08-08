@@ -159,7 +159,7 @@ func (s *ScreenAppList) applyFilters() {
 	filteredApps := s.apps
 
 	if s.projectFilter != "" {
-		var filtered []argocd.Application
+		filtered := make([]argocd.Application, 0, len(filteredApps))
 		for _, app := range filteredApps {
 			if app.Project == s.projectFilter {
 				filtered = append(filtered, app)
@@ -169,7 +169,7 @@ func (s *ScreenAppList) applyFilters() {
 	}
 
 	if s.healthFilter != "" {
-		var filtered []argocd.Application
+		filtered := make([]argocd.Application, 0, len(filteredApps))
 		for _, app := range filteredApps {
 			if strings.EqualFold(app.HealthStatus, s.healthFilter) {
 				filtered = append(filtered, app)
@@ -179,7 +179,7 @@ func (s *ScreenAppList) applyFilters() {
 	}
 
 	if s.syncFilter != "" {
-		var filtered []argocd.Application
+		filtered := make([]argocd.Application, 0, len(filteredApps))
 		for _, app := range filteredApps {
 			if strings.EqualFold(app.SyncStatus, s.syncFilter) {
 				filtered = append(filtered, app)
@@ -260,7 +260,7 @@ func (s *ScreenAppList) searchDone(key tcell.Key) {
 }
 
 func filterApplications(apps []argocd.Application, query string) []argocd.Application {
-	var filtered []argocd.Application
+	filtered := make([]argocd.Application, 0, len(apps))
 	lowerQuery := strings.ToLower(query)
 	for _, app := range apps {
 		if strings.Contains(app.SearchString(), lowerQuery) {
@@ -395,17 +395,17 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 			return event
 		}
 		selectedApp := s.filteredApps[row-1]
-		resources, err := s.client.GetAppResources(selectedApp.Name)
-		if err != nil {
-			modal := components.ErrorModal(
-				fmt.Sprintf("Error getting resources for app %s:", selectedApp.Name),
-				err.Error(),
-				s.modalClose,
-			)
-			s.app.SetRoot(modal, true)
-			return nil
-		}
-		resScreen := applicationResourcesList.New(s.app, resources, selectedApp.Name, s.router, s.instanceInfo, s.client)
+		// Не делаем предварительный сетевой вызов: экран ресурсов сам загрузит дерево
+		resScreen := applicationResourcesList.New(
+			s.app,
+			nil,
+			selectedApp.Name,
+			selectedApp.HealthStatus,
+			selectedApp.SyncStatus,
+			s.router,
+			s.instanceInfo,
+			s.client,
+		)
 		s.router.AddScreen(resScreen)
 		s.router.SwitchTo(resScreen.Name())
 		return nil
