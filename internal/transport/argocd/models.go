@@ -9,6 +9,8 @@ type Application struct {
 	SyncCommit   string `json:"syncCommit"`
 	Project      string `json:"project"`
 	LastActivity string `json:"lastActivity"`
+    // Cached lower-cased concatenation for search; not serialized
+    SearchIndex  string `json:"-"`
 }
 
 type Resource struct {
@@ -32,11 +34,15 @@ type TreeResource struct {
 }
 
 func (a *Application) SearchString() string {
-	return strings.ToLower(a.Name +
-		" " + a.HealthStatus +
-		" " + a.Project +
-		" " + a.SyncStatus +
-		" " + a.SyncCommit)
+    if a.SearchIndex != "" {
+        return a.SearchIndex
+    }
+    a.SearchIndex = strings.ToLower(a.Name +
+        " " + a.HealthStatus +
+        " " + a.Project +
+        " " + a.SyncStatus +
+        " " + a.SyncCommit)
+    return a.SearchIndex
 }
 
 func (r *Resource) SearchString() string {

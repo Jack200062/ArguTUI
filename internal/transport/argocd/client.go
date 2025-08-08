@@ -80,6 +80,8 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 			Project:      app.Spec.Project,
 			LastActivity: lastSyncTime,
 		})
+		// Fill cached search index to avoid recomputing during filtering
+		apps[len(apps)-1].SearchIndex = apps[len(apps)-1].SearchString()
 	}
 	return apps, nil
 }

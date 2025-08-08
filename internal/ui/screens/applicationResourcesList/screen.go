@@ -27,6 +27,8 @@ type TreeResource struct {
 	Expanded bool
 	Depth    int
 	IsLast   bool
+	// Cached lower-cased concatenation for search
+	SearchIndex string
 }
 
 type TreeLineInfo struct {
@@ -48,6 +50,7 @@ type ScreenAppResourcesList struct {
 	filteredResults  []argocd.Resource
 	rootResources    []*TreeResource
 	visibleResources []*TreeResource
+	cachedFlattened  []*TreeResource
 	selectedAppName  string
 	allExpanded      bool
 
@@ -67,24 +70,13 @@ func New(
 	app *tview.Application,
 	resources []argocd.Resource,
 	selectedAppName string,
+	appHealthStatus string,
+	appSyncStatus string,
 	r *ui.Router,
 	instanceInfo *common.InstanceInfo,
 	client *argocd.ArgoCdClient,
 ) *ScreenAppResourcesList {
-	var healthStatus, syncStatus string
-
-	apps, err := client.GetApps()
-	if err == nil {
-		for _, app := range apps {
-			if app.Name == selectedAppName {
-				healthStatus = app.HealthStatus
-				syncStatus = app.SyncStatus
-				break
-			}
-		}
-	}
-
-	instanceInfo = instanceInfo.WithAppInfo(selectedAppName, healthStatus, syncStatus)
+	instanceInfo = instanceInfo.WithAppInfo(selectedAppName, appHealthStatus, appSyncStatus)
 
 	return &ScreenAppResourcesList{
 		app:             app,
@@ -96,8 +88,8 @@ func New(
 		selectedAppName: selectedAppName,
 		originalNodes:   make(map[string]*TreeResource),
 		allExpanded:     true,
-		appHealthStatus: healthStatus,
-		appSyncStatus:   syncStatus,
+		appHealthStatus: appHealthStatus,
+		appSyncStatus:   appSyncStatus,
 	}
 }
 
@@ -214,7 +206,7 @@ func (s *ScreenAppResourcesList) Init() tview.Primitive {
 		s.showToast(fmt.Sprintf("Error building tree: %v", err), 3*time.Second)
 	}
 
-	s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+	s.visibleResources = s.cachedFlattened
 
 	rootKindTypes := s.extractRootKindFilters()
 
@@ -270,14 +262,12 @@ func (s *ScreenAppResourcesList) onFiltersChanged(activeFilters []filters.Filter
 		}
 	}
 
-	_ = s.buildTreeFromResourceTree()
-
 	if kindFilter != "" {
 		s.filterResourcesByKind(kindFilter)
 	} else if healthFilter != "" || syncFilter != "" {
 		s.filterResourcesByStatus(healthFilter, syncFilter)
 	} else {
-		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+		s.visibleResources = s.cachedFlattened
 	}
 
 	s.fillTableTreeMode()
@@ -285,7 +275,7 @@ func (s *ScreenAppResourcesList) onFiltersChanged(activeFilters []filters.Filter
 
 func (s *ScreenAppResourcesList) filterResourcesByKind(kindFilter string) {
 	if kindFilter == "" {
-		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+		s.visibleResources = s.cachedFlattened
 		return
 	}
 
@@ -304,17 +294,18 @@ func (s *ScreenAppResourcesList) filterResourcesByKind(kindFilter string) {
 	} else {
 		s.showToast(fmt.Sprintf("No root resources of type %s found", kindFilter), 2*time.Second)
 		s.filterManager.SetFilter(filters.ResourceKindFilter, "")
-		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+		s.visibleResources = s.cachedFlattened
 	}
 }
 
 func (s *ScreenAppResourcesList) filterResourcesByStatus(healthFilter, syncFilter string) {
 	if healthFilter == "" && syncFilter == "" {
-		s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+		s.cachedFlattened = flattenResourcesWithLines(s.rootResources, 0, nil)
+		s.visibleResources = s.cachedFlattened
 		return
 	}
 
-	allNodes := flattenResourcesWithLines(s.rootResources, 0, nil)
+	allNodes := s.cachedFlattened
 	var filtered []*TreeResource
 
 	for _, node := range allNodes {
@@ -342,7 +333,8 @@ func (s *ScreenAppResourcesList) toggleExpansionAll() {
 		s.allExpanded = true
 	}
 
-	s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+	s.cachedFlattened = flattenResourcesWithLines(s.rootResources, 0, nil)
+	s.visibleResources = s.cachedFlattened
 	s.fillTableTreeMode()
 }
 
@@ -390,19 +382,20 @@ func (s *ScreenAppResourcesList) searchDone(key tcell.Key) {
 
 func (s *ScreenAppResourcesList) filterResources(query string) {
 	if query == "" {
-		_ = s.buildTreeFromResourceTree()
+		// Без сети: восстановить видимый список из уже загруженного дерева
+		s.visibleResources = s.cachedFlattened
 		s.fillTableTreeMode()
 		return
 	}
 
 	lq := strings.ToLower(query)
 
-	_ = s.buildTreeFromResourceTree()
-	allNodes := flattenResourcesWithLines(s.rootResources, 0, nil)
+	// Используем уже имеющееся дерево вместо повторного сетевого запроса
+	allNodes := s.cachedFlattened
 	var filtered []*TreeResource
 	for _, n := range allNodes {
-		text := strings.ToLower(n.Kind + " " + n.Name + " " + n.Namespace + " " + n.Health + " " + n.SyncStatus)
-		if strings.Contains(text, lq) {
+		// Используем предрасчитанный индекс
+		if strings.Contains(n.SearchIndex, lq) {
 			filtered = append(filtered, n)
 		}
 	}
@@ -420,6 +413,8 @@ func (s *ScreenAppResourcesList) buildTreeFromResourceTree() error {
 	s.rootResources = buildTreeFromNodes(appTree.Nodes)
 	markLastNodes(s.rootResources)
 	s.buildOriginalNodesMap()
+	// Обновить кэш развёрнутого списка
+	s.cachedFlattened = flattenResourcesWithLines(s.rootResources, 0, nil)
 	return nil
 }
 
@@ -440,6 +435,8 @@ func buildTreeFromNodes(nodes []v1alpha1.ResourceNode) []*TreeResource {
 			tr.Health = "Unknown"
 		}
 		tr.SyncStatus = "Synced"
+		// Precompute search index
+		tr.SearchIndex = strings.ToLower(tr.Kind + " " + tr.Name + " " + tr.Namespace + " " + tr.Health + " " + tr.SyncStatus)
 		resourceMap[n.UID] = tr
 	}
 
@@ -525,7 +522,8 @@ func (s *ScreenAppResourcesList) onTableKey(event *tcell.EventKey) *tcell.EventK
 						collapseFully(originalNode)
 					}
 
-					s.visibleResources = flattenResourcesWithLines(s.rootResources, 0, nil)
+					s.cachedFlattened = flattenResourcesWithLines(s.rootResources, 0, nil)
+					s.visibleResources = s.cachedFlattened
 					s.fillTableTreeMode()
 				}
 			}
