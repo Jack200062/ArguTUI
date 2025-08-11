@@ -52,9 +52,7 @@ func validateConfig(c *Config) error {
 		if inst.Url == "" {
 			return errors.New("instance url is required")
 		}
-		if inst.Token == "" {
-			return errors.New("instance token is required")
-		}
+		// Token can be empty to allow anonymous access
 	}
 	return nil
 }

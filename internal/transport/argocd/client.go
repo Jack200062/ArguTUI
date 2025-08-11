@@ -22,7 +22,10 @@ func NewArgoCdClient(cfg *config.Instance, l *logging.Logger, ctx context.Contex
 	clientOpt := &apiclient.ClientOptions{
 		Insecure:   cfg.InsecureSkipVerify,
 		ServerAddr: cfg.Url,
-		AuthToken:  cfg.Token,
+	}
+	// В гостевом режиме не отправляем токен
+	if !cfg.Anonymous {
+		clientOpt.AuthToken = cfg.Token
 	}
 	c, err := apiclient.NewClient(clientOpt)
 	if err != nil {
@@ -138,6 +141,31 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 	}
 
 	return resources, nil
+}
+
+// GetResourceManifest returns desired and live manifests for a given resource key
+func (a *ArgoCdClient) GetResourceManifest(appName, group, kind, namespace, name string) (desired string, live string, err error) {
+	_, appClient, err := a.client.NewApplicationClient()
+	if err != nil {
+		return "", "", a.logger.Errorf("Error creating argocd client: %v", err)
+	}
+	// Manifests via ManagedResources (ResourceDiff contains LiveState/TargetState)
+	resList, err := appClient.ManagedResources(a.ctx, &application.ResourcesQuery{ApplicationName: &appName})
+	if err != nil {
+		return desired, "", a.logger.Errorf("Error getting managed resources: %v", err)
+	}
+	key := fmt.Sprintf("%s/%s/%s/%s", group, kind, namespace, name)
+	for _, r := range resList.Items {
+		if fmt.Sprintf("%s/%s/%s/%s", r.Group, r.Kind, r.Namespace, r.Name) == key {
+			live = r.LiveState
+			desired = r.TargetState
+			break
+		}
+	}
+	if desired == "" && live == "" {
+		return "", "", a.logger.Errorf("resource not found: %s", key)
+	}
+	return desired, live, nil
 }
 
 func (a *ArgoCdClient) GetResourceTree(appName string) (*v1alpha1.ApplicationTree, error) {

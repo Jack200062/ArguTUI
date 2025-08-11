@@ -39,6 +39,10 @@ type ScreenAppList struct {
 	footer    *Footer
 	tableView *TableView
 	helpView  *components.HelpView
+
+	// command mode
+	commandBar *components.CommandBar
+	inCommand  bool
 }
 
 func New(
@@ -60,6 +64,29 @@ func New(
 		apps:            apps,
 		filteredApps:    apps,
 		lastRefreshTime: time.Now(),
+	}
+}
+
+// FooterView returns footer controller for status updates (e.g., loading spinner)
+func (s *ScreenAppList) FooterView() *Footer {
+	return s.footer
+}
+
+// SetApps updates internal apps list and refreshes UI
+func (s *ScreenAppList) SetApps(apps []argocd.Application) {
+	s.apps = apps
+	s.filteredApps = apps
+	s.lastRefreshTime = time.Now()
+	healthy, degraded, outOfSync := s.getApplicationStats()
+	if s.topBar != nil {
+		s.topBar.UpdateStats(healthy, degraded, outOfSync)
+	}
+	if s.footer != nil {
+		s.footer.SetLoading(false, "")
+		s.footer.UpdateTimeInfo(s.lastRefreshTime)
+	}
+	if s.tableView != nil {
+		s.tableView.FillTable(s.filteredApps, s.getActiveFiltersText())
 	}
 }
 
@@ -112,6 +139,9 @@ func (s *ScreenAppList) Init() tview.Primitive {
 	s.grid.AddItem(topBarPrimitive, 0, 0, 1, 1, 0, 0, false).
 		AddItem(s.table, 1, 0, 1, 1, 0, 0, true).
 		AddItem(footerPrimitive, 2, 0, 1, 1, 0, 0, false)
+
+	// command bar (hidden by default)
+	s.commandBar = components.NewCommandBar(s.execCommand)
 
 	s.pages = tview.NewPages().
 		AddPage("main", s.grid, true, true)
@@ -271,10 +301,56 @@ func filterApplications(apps []argocd.Application, query string) []argocd.Applic
 }
 
 func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
-	if s.app.GetFocus() == s.searchBar.InputField {
+	if s.app.GetFocus() == s.searchBar.InputField || s.inCommand {
 		return event
 	}
+	// k9s-like navigation keys
+	switch event.Key() {
+	case tcell.KeyCtrlU: // half page up
+		s.moveSelection(-s.halfPage())
+		return nil
+	case tcell.KeyCtrlD: // half page down
+		s.moveSelection(s.halfPage())
+		return nil
+	case tcell.KeyCtrlB, tcell.KeyPgUp:
+		s.moveSelection(-s.fullPage())
+		return nil
+	case tcell.KeyCtrlF, tcell.KeyPgDn:
+		s.moveSelection(s.fullPage())
+		return nil
+	case tcell.KeyCtrlK: // delete (k9s)
+		row, _ := s.table.GetSelection()
+		if row < 1 || row-1 >= len(s.filteredApps) {
+			return nil
+		}
+		selectedApp := s.filteredApps[row-1]
+		s.confirmAndDeleteApplication(selectedApp.Name)
+		return nil
+	}
+
 	switch event.Rune() {
+	case ':':
+		// Enter command mode
+		s.inCommand = true
+		s.grid.RemoveItem(s.table)
+		s.grid.SetRows(4, 0, 1, 1)
+		s.grid.AddItem(s.table, 1, 0, 1, 1, 0, 0, false)
+		s.grid.AddItem(s.commandBar.Primitive(), 3, 0, 1, 1, 0, 0, true)
+		s.commandBar.Primitive().SetText("")
+		s.app.SetFocus(s.commandBar.Primitive())
+		return nil
+	case 'j':
+		s.moveSelection(1)
+		return nil
+	case 'k':
+		s.moveSelection(-1)
+		return nil
+	case 'g': // go top
+		s.gotoTop()
+		return nil
+	case 'G': // go bottom
+		s.gotoBottom()
+		return nil
 	case 'I':
 		s.router.SwitchTo("InstanceSelection")
 		return nil
@@ -282,13 +358,7 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 		s.pages.SwitchToPage("help")
 		s.app.SetFocus(s.pages)
 		return nil
-	case 'q':
-		if s.footer != nil {
-			s.footer.Stop()
-		}
-		s.app.Stop()
-		return nil
-	case '/', ':':
+	case '/':
 		s.showSearchBar()
 		s.app.SetFocus(s.searchBar.InputField)
 		return nil
@@ -413,6 +483,48 @@ func (s *ScreenAppList) onGridKey(event *tcell.EventKey) *tcell.EventKey {
 	return event
 }
 
+// execCommand implements a minimal k9s-like ':' command set for app list
+func (s *ScreenAppList) execCommand(cmd string, args []string) {
+	// leave command mode UI
+	s.inCommand = false
+	s.grid.RemoveItem(s.commandBar.Primitive())
+	s.grid.RemoveItem(s.table)
+	s.grid.SetRows(4, 0, 1)
+	s.grid.AddItem(s.table, 1, 0, 1, 1, 0, 0, true)
+	s.app.SetFocus(s.table)
+
+	switch cmd {
+	case "help":
+		s.pages.SwitchToPage("help")
+		s.app.SetFocus(s.pages)
+	case "refresh", "r":
+		s.refreshApps()
+	case "filter":
+		// :filter kind=Deployment,health=Healthy
+		for _, a := range args {
+			parts := strings.SplitN(a, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			k, v := strings.ToLower(parts[0]), parts[1]
+			switch k {
+			case "project":
+				s.projectFilter = v
+			case "health":
+				s.healthFilter = v
+			case "sync":
+				s.syncFilter = v
+			}
+		}
+		s.applyFilters()
+	case "clear":
+		s.projectFilter, s.healthFilter, s.syncFilter, s.searchQuery = "", "", "", ""
+		s.applyFilters()
+	case "apps":
+		// already here
+	}
+}
+
 func (s *ScreenAppList) syncApplication(appName string) error {
 	err := s.client.SyncApp(appName)
 	if err != nil {
@@ -457,6 +569,41 @@ func (s *ScreenAppList) confirmAndDeleteApplication(appName string) {
 
 func (s *ScreenAppList) modalClose() {
 	s.app.SetRoot(s.pages, true)
+}
+
+func (s *ScreenAppList) moveSelection(delta int) {
+	row, _ := s.table.GetSelection()
+	row += delta
+	if row < 1 {
+		row = 1
+	}
+	if row > len(s.filteredApps) {
+		row = len(s.filteredApps)
+	}
+	if row >= 1 {
+		s.table.Select(row, 0)
+	}
+}
+
+func (s *ScreenAppList) halfPage() int {
+	// visible rows approx
+	return 10
+}
+
+func (s *ScreenAppList) fullPage() int {
+	return 20
+}
+
+func (s *ScreenAppList) gotoTop() {
+	if len(s.filteredApps) > 0 {
+		s.table.Select(1, 0)
+	}
+}
+
+func (s *ScreenAppList) gotoBottom() {
+	if n := len(s.filteredApps); n > 0 {
+		s.table.Select(n, 0)
+	}
 }
 
 func (s *ScreenAppList) showToast(message string, duration time.Duration) {

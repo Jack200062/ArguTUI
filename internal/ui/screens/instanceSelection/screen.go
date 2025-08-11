@@ -5,6 +5,7 @@ import (
 
 	"github.com/Jack200062/ArguTUI/config"
 	"github.com/Jack200062/ArguTUI/internal/ui"
+    "github.com/Jack200062/ArguTUI/internal/ui/components"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -109,12 +110,18 @@ func (s *InstanceSelectionScreen) calculateDimensions() {
 }
 
 func (s *InstanceSelectionScreen) Init() tview.Primitive {
-	textColor := tcell.ColorYellow                 // #795200
-	backgroundColor := tcell.NewHexColor(0x000000) // #000000 for background
-	header := tview.NewTextView().
-		SetTextColor(textColor).
-		SetTextAlign(tview.AlignCenter).SetText(" ArguTUI - ArgoCD Terminal UI ")
-	header.SetBackgroundColor(backgroundColor)
+    textColor := tcell.ColorYellow                 // #795200
+    backgroundColor := tcell.NewHexColor(0x000000) // #000000 for background
+    header := tview.NewFlex().SetDirection(tview.FlexRow)
+    header.SetBackgroundColor(backgroundColor)
+    // k9s-like header with logo
+    logo := components.NewOctopusLogo()
+    title := tview.NewTextView().
+        SetTextColor(textColor).
+        SetTextAlign(tview.AlignCenter).SetText(" ArguTUI - ArgoCD Terminal UI ")
+    title.SetBackgroundColor(backgroundColor)
+    header.AddItem(logo, 4, 0, false)
+    header.AddItem(title, 1, 0, false)
 
 	footer := tview.NewTextView().
 		SetDynamicColors(true).
@@ -122,9 +129,9 @@ func (s *InstanceSelectionScreen) Init() tview.Primitive {
 		SetTextAlign(tview.AlignCenter)
 	footer.SetBackgroundColor(backgroundColor)
 
-	flex := tview.NewFlex().
+    flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
-		AddItem(header, 1, 0, false).
+        AddItem(header, 5, 0, false).
 		AddItem(s.list, s.listHeight, 0, true).
 		AddItem(footer, 1, 0, false)
 

@@ -59,11 +59,17 @@ func (t *TopBar) Init() tview.Primitive {
 
 	shortcutBarPrimitive := shortcutBar.Init()
 
-	t.view = tview.NewFlex().
+    // small logo on the right side
+    miniLogo := components.NewMiniLogoRight()
+    // compress logo height for top bar
+    miniLogo.SetTextAlign(tview.AlignRight)
+
+    t.view = tview.NewFlex().
 		SetDirection(tview.FlexColumn).
 		AddItem(instanceView, 0, 1, false).
 		AddItem(statsView, 0, 1, false).
-		AddItem(shortcutBarPrimitive, 0, 2, false)
+        AddItem(shortcutBarPrimitive, 0, 2, false).
+        AddItem(miniLogo, 10, 0, false)
 	t.view.SetBackgroundColor(t.backgroundColor)
 
 	return t.view
