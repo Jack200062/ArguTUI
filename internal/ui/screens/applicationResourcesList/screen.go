@@ -1,10 +1,15 @@
 package applicationResourcesList
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
@@ -64,6 +69,9 @@ type ScreenAppResourcesList struct {
 
 	appHealthStatus string
 	appSyncStatus   string
+
+	// unique screen name per application
+	name string
 }
 
 func New(
@@ -90,6 +98,7 @@ func New(
 		allExpanded:     true,
 		appHealthStatus: appHealthStatus,
 		appSyncStatus:   appSyncStatus,
+		name:            "ApplicationResourcesList:" + selectedAppName,
 	}
 }
 
@@ -461,18 +470,68 @@ func buildTreeFromNodes(nodes []v1alpha1.ResourceNode) []*TreeResource {
 }
 
 func (s *ScreenAppResourcesList) onTableKey(event *tcell.EventKey) *tcell.EventKey {
-	switch event.Rune() {
-	case 'q':
-		s.app.Stop()
-		return nil
-	case 'b':
+	// esc -> back like k9s
+	if event.Key() == tcell.KeyEsc {
 		s.router.Back()
+		return nil
+	}
+	// k9s-like navigation keys
+	switch event.Key() {
+	case tcell.KeyCtrlU:
+		s.moveSelection(-s.halfPage())
+		return nil
+	case tcell.KeyCtrlD:
+		s.moveSelection(s.halfPage())
+		return nil
+	case tcell.KeyCtrlB, tcell.KeyPgUp:
+		s.moveSelection(-s.fullPage())
+		return nil
+	case tcell.KeyCtrlF, tcell.KeyPgDn:
+		s.moveSelection(s.fullPage())
+		return nil
+	}
+	switch event.Rune() {
+	case 'j':
+		s.moveSelection(1)
+		return nil
+	case 'k':
+		s.moveSelection(-1)
+		return nil
+	case 'g':
+		s.gotoTop()
+		return nil
+	case 'G':
+		s.gotoBottom()
 		return nil
 	case 't':
 		s.toggleExpansionAll()
 		return nil
 	case '/', ':':
 		s.showSearchBar()
+		return nil
+	case 'y':
+		yamlText := s.selectedResourceYAML(false)
+		if yamlText == "" {
+			s.showToast("YAML not available", 2*time.Second)
+			return nil
+		}
+		modal := components.TextModal("YAML", yamlText, func() { s.app.SetRoot(s.pages, true) })
+		s.app.SetRoot(modal, true)
+		return nil
+	case 'e':
+		// Open in external editor ($KUBE_EDITOR/$EDITOR or vim)
+		s.promptEditResource()
+		return nil
+	case '=':
+		if desired, live, ok := s.selectedResourcePair(); ok {
+			// normalize both sides to YAML for consistent diff rendering
+			left := s.normalizeToYAML(desired)
+			right := s.normalizeToYAML(live)
+			view := components.NewSideBySideDiff("Diff (desired vs live)", " Desired ", " Live ", left, right, func() { s.app.SetRoot(s.pages, true) })
+			s.app.SetRoot(view, true)
+		} else {
+			s.showToast("Diff not available", 2*time.Second)
+		}
 		return nil
 	case '?':
 		s.pages.SwitchToPage("help")
@@ -534,6 +593,34 @@ func (s *ScreenAppResourcesList) onTableKey(event *tcell.EventKey) *tcell.EventK
 	return event
 }
 
+// Navigation helpers for k9s-like keys
+func (s *ScreenAppResourcesList) moveSelection(delta int) {
+	row, _ := s.table.GetSelection()
+	row += delta
+	if row < 1 {
+		row = 1
+	}
+	if row > len(s.visibleResources) {
+		row = len(s.visibleResources)
+	}
+	if row >= 1 {
+		s.table.Select(row, 0)
+	}
+}
+
+func (s *ScreenAppResourcesList) halfPage() int { return 10 }
+func (s *ScreenAppResourcesList) fullPage() int { return 20 }
+func (s *ScreenAppResourcesList) gotoTop() {
+	if len(s.visibleResources) > 0 {
+		s.table.Select(1, 0)
+	}
+}
+func (s *ScreenAppResourcesList) gotoBottom() {
+	if n := len(s.visibleResources); n > 0 {
+		s.table.Select(n, 0)
+	}
+}
+
 func (s *ScreenAppResourcesList) buildOriginalNodesMap() {
 	s.originalNodes = make(map[string]*TreeResource)
 
@@ -546,6 +633,219 @@ func (s *ScreenAppResourcesList) buildOriginalNodesMap() {
 	}
 
 	addToMap(s.rootResources)
+}
+
+// Helpers to fetch YAML/diff for current selection
+func (s *ScreenAppResourcesList) selectedResourcePair() (desired string, live string, ok bool) {
+	row, _ := s.table.GetSelection()
+	if row <= 0 || row-1 >= len(s.visibleResources) {
+		return "", "", false
+	}
+	r := s.visibleResources[row-1]
+	d, l, err := s.client.GetResourceManifest(s.selectedAppName, "", r.Kind, r.Namespace, r.Name)
+	if err != nil {
+		return "", "", false
+	}
+	return d, l, true
+}
+
+func (s *ScreenAppResourcesList) selectedResourceYAML(preferDesired bool) string {
+	d, l, ok := s.selectedResourcePair()
+	if !ok {
+		return ""
+	}
+	// prefer live by default for readability
+	raw := l
+	if preferDesired && d != "" {
+		raw = d
+	} else if raw == "" {
+		raw = d
+	}
+	// Normalize and sanitize to YAML
+	return s.normalizeToYAML(raw)
+}
+
+// normalizeToYAML tries to convert JSON to YAML, otherwise returns as-is
+func (s *ScreenAppResourcesList) normalizeToYAML(text string) string {
+	var any interface{}
+	// Try YAML first
+	if err := yaml.Unmarshal([]byte(text), &any); err == nil {
+		cleaned := sanitizeK8sFields(any)
+		if y, err := yaml.Marshal(cleaned); err == nil {
+			return string(y)
+		}
+	}
+	// Fallback to JSON parsing
+	if err := json.Unmarshal([]byte(text), &any); err == nil {
+		cleaned := sanitizeK8sFields(any)
+		if y, err := yaml.Marshal(cleaned); err == nil {
+			return string(y)
+		}
+		if buf, err := json.MarshalIndent(cleaned, "", "  "); err == nil {
+			return string(buf)
+		}
+	}
+	return text
+}
+
+// promptEditResource runs `kubectl edit` for the selected resource in the user's $EDITOR
+func (s *ScreenAppResourcesList) promptEditResource() {
+	row, _ := s.table.GetSelection()
+	if row <= 0 || row-1 >= len(s.visibleResources) {
+		s.showToast("Nothing selected", 2*time.Second)
+		return
+	}
+
+	// Возьмём актуальный YAML (Live) и дадим пользователю отредактировать его во внешнем редакторе
+	yamlText := s.selectedResourceYAML(false)
+	if strings.TrimSpace(yamlText) == "" {
+		s.showToast("YAML not available", 2*time.Second)
+		return
+	}
+
+	tmp, err := os.CreateTemp("", "argutui-edit-*.yaml")
+	if err != nil {
+		s.showToast("tmpfile error", 3*time.Second)
+		return
+	}
+	tmpPath := tmp.Name()
+	_, _ = tmp.WriteString(yamlText)
+	_ = tmp.Close()
+
+	// Выбираем редактор: KUBE_EDITOR > EDITOR > vim
+	editor := os.Getenv("KUBE_EDITOR")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		editor = "vim"
+	}
+
+	// Запускаем редактор синхронно в suspend-режиме
+	s.app.Suspend(func() {
+		cmd := exec.Command(editor, tmpPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+		_ = cmd.Run()
+	})
+
+	// После выхода из редактора применим изменения
+	go func() {
+		defer os.Remove(tmpPath)
+		cmd := exec.Command("kubectl", "apply", "-f", tmpPath)
+		out, err := cmd.CombinedOutput()
+		s.app.QueueUpdateDraw(func() {
+			if err != nil {
+				s.showToast("Apply failed: "+string(out), 5*time.Second)
+			} else {
+				s.showToast("Applied", 2*time.Second)
+			}
+		})
+	}()
+}
+
+// sanitizeK8sFields removes noisy, server-populated fields to make diffs cleaner
+func sanitizeK8sFields(v interface{}) interface{} {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		// Remove status entirely (server-populated)
+		delete(val, "status")
+		// If metadata exists, clean it
+		if metaRaw, ok := val["metadata"]; ok {
+			if meta, ok := metaRaw.(map[string]interface{}); ok {
+				delete(meta, "managedFields")
+				delete(meta, "resourceVersion")
+				delete(meta, "selfLink")
+				delete(meta, "uid")
+				delete(meta, "creationTimestamp")
+				delete(meta, "deletionTimestamp")
+				// Clean annotations
+				if annRaw, ok := meta["annotations"]; ok {
+					if ann, ok := annRaw.(map[string]interface{}); ok {
+						// Known noisy annotations
+						noisy := map[string]bool{
+							"kubectl.kubernetes.io/last-applied-configuration": true,
+							"kubectl.kubernetes.io/restartedAt":                true,
+							"deployment.kubernetes.io/revision":                true,
+						}
+						for k := range noisy {
+							delete(ann, k)
+						}
+						// If annotations becomes empty, drop it
+						if len(ann) == 0 {
+							delete(meta, "annotations")
+						}
+					}
+				}
+				// If metadata becomes empty, drop it
+				if len(meta) == 0 {
+					delete(val, "metadata")
+				} else {
+					val["metadata"] = meta
+				}
+			}
+		}
+		// Recurse into all nested maps/arrays
+		for k, child := range val {
+			val[k] = sanitizeK8sFields(child)
+		}
+		return val
+	case []interface{}:
+		for i, child := range val {
+			val[i] = sanitizeK8sFields(child)
+		}
+		return val
+	default:
+		return v
+	}
+}
+
+func (s *ScreenAppResourcesList) renderUnifiedDiff(desired, live string) string {
+	if desired == live {
+		return "No changes"
+	}
+	// Normalize to YAML if possible for consistent diff
+	toYAML := func(s string) string {
+		var v interface{}
+		if json.Unmarshal([]byte(s), &v) == nil {
+			if y, err := yaml.Marshal(v); err == nil {
+				return string(y)
+			}
+			b, _ := json.MarshalIndent(v, "", "  ")
+			return string(b)
+		}
+		return s
+	}
+	desired = toYAML(desired)
+	live = toYAML(live)
+	// argocd-like unified diff markers with color
+	dl := strings.Split(desired, "\n")
+	ll := strings.Split(live, "\n")
+	var out []string
+	out = append(out, " Desired ", " Live ")
+	i, j := 0, 0
+	for i < len(dl) || j < len(ll) {
+		if i < len(dl) && j < len(ll) {
+			if dl[i] == ll[j] {
+				out = append(out, " "+dl[i])
+				i++
+				j++
+			} else {
+				out = append(out, "[#ff6b6b]-"+dl[i]+"[-]")
+				out = append(out, "[#51cf66]+"+ll[j]+"[-]")
+				i++
+				j++
+			}
+		} else if i < len(dl) {
+			out = append(out, "[#ff6b6b]-"+dl[i]+"[-]")
+			i++
+		} else if j < len(ll) {
+			out = append(out, "[#51cf66]+"+ll[j]+"[-]")
+			j++
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func (s *ScreenAppResourcesList) fillTableTreeMode() {
@@ -575,5 +875,8 @@ func (s *ScreenAppResourcesList) showToast(message string, duration time.Duratio
 }
 
 func (s *ScreenAppResourcesList) Name() string {
+	if s.name != "" {
+		return s.name
+	}
 	return "ApplicationResourcesList"
 }

@@ -46,22 +46,44 @@ func main() {
 		instanceInfo := common.NewInstanceInfo(inst.Url, inst.Name)
 
 		argocdClient := argocd.NewArgoCdClient(inst, logger, ctx)
+		// Сначала отрисовываем пустой экран приложений и запускаем фоновую загрузку
+		appList := applicationlist.New(tviewApp, argocdClient, router, instanceInfo, []argocd.Application{})
+		_ = router.AddScreen(appList)
+		_ = router.SwitchTo(appList.Name())
 
-		apps, err := argocdClient.GetApps()
-		if err != nil {
-			logger.Errorf("Error getting all applications: %v", err)
-			return
-		}
-
-		appList := applicationlist.New(tviewApp, argocdClient, router, instanceInfo, apps)
-		router.AddScreen(appList)
-		router.SwitchTo(appList.Name())
+		go func() {
+			// Показать индикатор загрузки в футере
+			tviewApp.QueueUpdateDraw(func() {
+				if appList != nil && appList.FooterView() != nil {
+					appList.FooterView().SetLoading(true, "Loading applications...")
+				}
+			})
+			apps, err := argocdClient.GetApps()
+			if err != nil {
+				tviewApp.QueueUpdateDraw(func() {
+					modal := tview.NewModal().
+						SetText(fmt.Sprintf("Failed to load applications for %s (url: %s)\n\n%v", inst.Name, inst.Url, err)).
+						AddButtons([]string{"OK"}).
+						SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+							_ = router.SwitchTo("InstanceSelection")
+						})
+					router.ShowModal(modal)
+				})
+				return
+			}
+            tviewApp.QueueUpdateDraw(func() {
+                // Обновляем текущий экран данными без пересоздания
+                appList.SetApps(apps)
+            })
+		}()
 	}
 
+	// Всегда регистрируем экран выбора инстанса
+	instanceSelection := screens.NewInstanceSelectionScreen(tviewApp, cfg, router, switchToInstance)
+	_ = router.AddScreen(instanceSelection)
+
 	if len(cfg.Instances) > 1 {
-		instanceSelection := screens.NewInstanceSelectionScreen(tviewApp, cfg, router, switchToInstance)
-		router.AddScreen(instanceSelection)
-		router.SwitchTo(instanceSelection.Name())
+		_ = router.SwitchTo(instanceSelection.Name())
 	} else if len(cfg.Instances) == 1 {
 		switchToInstance(cfg.Instances[0])
 	} else {

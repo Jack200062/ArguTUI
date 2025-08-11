@@ -27,3 +27,5 @@ go.work.sum
 .vscode
 config/config.yml
 file.txt
+# Ignore built binaries
+bin/

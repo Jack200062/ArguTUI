@@ -19,6 +19,11 @@ type Footer struct {
 	lastRefreshTime  time.Time
 	ticker           *time.Ticker
 	done             chan bool
+	// loading state
+	loading        bool
+	spinnerIdx     int
+	spinnerFrames  []string
+	loadingMessage string
 }
 
 func NewFooter(app *tview.Application, backgroundColor, shortcutKeyColor tcell.Color) *Footer {
@@ -27,6 +32,7 @@ func NewFooter(app *tview.Application, backgroundColor, shortcutKeyColor tcell.C
 		backgroundColor:  backgroundColor,
 		shortcutKeyColor: shortcutKeyColor,
 		done:             make(chan bool),
+		spinnerFrames:    []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
 	}
 }
 
@@ -66,13 +72,26 @@ func (f *Footer) Init() tview.Primitive {
 }
 
 func (f *Footer) startTimeUpdater() {
-	f.ticker = time.NewTicker(10 * time.Second)
+	// Частое обновление нужно для анимации спиннера
+	f.ticker = time.NewTicker(200 * time.Millisecond)
 	go func() {
 		for {
 			select {
 			case <-f.ticker.C:
 				f.app.QueueUpdateDraw(func() {
-					f.UpdateTimeInfo(f.lastRefreshTime)
+					if f.loading {
+						f.spinnerIdx = (f.spinnerIdx + 1) % len(f.spinnerFrames)
+						if f.timeView != nil {
+							frame := f.spinnerFrames[f.spinnerIdx]
+							msg := f.loadingMessage
+							if msg == "" {
+								msg = "Loading..."
+							}
+							f.timeView.SetText(fmt.Sprintf("[#63a0bf]%s[white] %s", frame, msg))
+						}
+					} else {
+						f.UpdateTimeInfo(f.lastRefreshTime)
+					}
 				})
 			case <-f.done:
 				f.ticker.Stop()
@@ -90,6 +109,11 @@ func (f *Footer) Stop() {
 
 func (f *Footer) UpdateTimeInfo(lastRefreshTime time.Time) {
 	if f.timeView == nil {
+		return
+	}
+
+	if f.loading {
+		// В режиме загрузки управляем текстом из тика
 		return
 	}
 
@@ -115,6 +139,16 @@ func (f *Footer) UpdateTimeInfo(lastRefreshTime time.Time) {
 	lastRefresh := f.getLastRefreshTime(lastRefreshTime)
 	f.timeView.SetText(fmt.Sprintf("[gray]Last refresh: [#63a0bf]%s[gray] | [#ffffff]%s",
 		lastRefresh, timeStr))
+}
+
+// SetLoading включает/выключает нижний индикатор загрузки с анимированным спиннером
+func (f *Footer) SetLoading(loading bool, message string) {
+	f.loading = loading
+	f.loadingMessage = message
+	if !loading {
+		// Вернём обычный статус
+		f.UpdateTimeInfo(f.lastRefreshTime)
+	}
 }
 
 func (f *Footer) getLastRefreshTime(lastRefreshTime time.Time) string {
