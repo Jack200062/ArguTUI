@@ -74,7 +74,10 @@ func (r *Router) SwitchTo(name string) error {
 		r.history = append(r.history, r.current.Name())
 	}
 	r.current = screen
-	r.app.SetRoot(screen.Init(), true)
+	primitive := screen.Init()
+	r.app.QueueUpdateDraw(func() {
+		r.app.SetRoot(primitive, true)
+	})
 	return nil
 }
 
@@ -99,7 +102,10 @@ func (r *Router) Back() error {
 	}
 
 	r.current = screen
-	r.app.SetRoot(screen.Init(), true)
+	primitive := screen.Init()
+	r.app.QueueUpdateDraw(func() {
+		r.app.SetRoot(primitive, true)
+	})
 	return nil
 }
 
@@ -123,7 +129,10 @@ func (r *Router) CloseModal() {
 		return
 	}
 	r.isModal = false
-	r.app.SetRoot(r.current.Init(), true)
+	primitive := r.current.Init()
+	r.app.QueueUpdateDraw(func() {
+		r.app.SetRoot(primitive, true)
+	})
 }
 
 func (r *Router) IsModalActive() bool {
