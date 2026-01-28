@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/Jack200062/ArguTUI/config"
+	"github.com/Jack200062/ArguTUI/internal/auth"
 	"github.com/Jack200062/ArguTUI/internal/transport/argocd"
 	"github.com/Jack200062/ArguTUI/internal/ui"
 	"github.com/Jack200062/ArguTUI/internal/ui/common"
@@ -44,18 +45,37 @@ func main() {
 
 	switchToInstance := func(inst *config.Instance) {
 		instanceInfo := common.NewInstanceInfo(inst.Url, inst.Name)
+		noAuthClient := argocd.NewArgoCdClient(inst, logger, ctx)
 
-		argocdClient := argocd.NewArgoCdClient(inst, logger, ctx)
+		authHandler := auth.NewAuth(instanceInfo.Name, inst, noAuthClient, logger, ctx)
+		authHandler.WithApp(tviewApp)
+		authHandler.WithRouter(router)
+		// using default browser opener
 
-		apps, err := argocdClient.GetApps()
-		if err != nil {
-			logger.Errorf("Error getting all applications: %v", err)
-			return
-		}
+		// get token, fetch apps and render the list
+		go func() {
+			token, err := authHandler.GetToken()
+			if err != nil {
+				logger.Errorf("Error getting auth token: %v", err)
+				// this cannot continue. close the app
+				tviewApp.Stop()
+				return
+			}
+			inst.Token = token
 
-		appList := applicationlist.New(tviewApp, argocdClient, router, instanceInfo, apps)
-		router.AddScreen(appList)
-		router.SwitchTo(appList.Name())
+			tviewApp.QueueUpdateDraw(func() {
+				argocdClient := argocd.NewArgoCdClient(inst, logger, ctx)
+				apps, err := argocdClient.GetApps()
+				if err != nil {
+					logger.Errorf("Error getting all applications: %v", err)
+					return
+				}
+
+				appList := applicationlist.New(tviewApp, argocdClient, router, instanceInfo, apps)
+				router.AddScreen(appList)
+				router.SwitchTo(appList.Name())
+			})
+		}()
 	}
 
 	if len(cfg.Instances) > 1 {
@@ -63,7 +83,11 @@ func main() {
 		router.AddScreen(instanceSelection)
 		router.SwitchTo(instanceSelection.Name())
 	} else if len(cfg.Instances) == 1 {
-		switchToInstance(cfg.Instances[0])
+		inst := cfg.Instances[0]
+		// Create and show a placeholder that will be replaced by login screen
+		placeholder := tview.NewBox().SetBackgroundColor(0x000000)
+		tviewApp.SetRoot(placeholder, true)
+		switchToInstance(inst)
 	} else {
 		logger.Fatal("No instances found in config")
 	}
