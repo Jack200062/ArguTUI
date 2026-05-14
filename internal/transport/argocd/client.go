@@ -3,12 +3,17 @@ package argocd
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/Jack200062/ArguTUI/config"
 	"github.com/Jack200062/ArguTUI/pkg/logging"
 	"github.com/argoproj/argo-cd/v2/pkg/apiclient"
 	"github.com/argoproj/argo-cd/v2/pkg/apiclient/application"
+	"github.com/argoproj/argo-cd/v2/pkg/apiclient/session"
+	"github.com/argoproj/argo-cd/v2/pkg/apiclient/settings"
 	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
+	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
 )
 
 type ArgoCdClient struct {
@@ -16,6 +21,10 @@ type ArgoCdClient struct {
 	client apiclient.Client
 	logger *logging.Logger
 	ctx    context.Context
+}
+
+func (a *ArgoCdClient) HttpClient() (*http.Client, error) {
+	return a.client.HTTPClient()
 }
 
 func NewArgoCdClient(cfg *config.Instance, l *logging.Logger, ctx context.Context) *ArgoCdClient {
@@ -36,11 +45,14 @@ func NewArgoCdClient(cfg *config.Instance, l *logging.Logger, ctx context.Contex
 	}
 }
 
+// TODO: cache clients returned bu New...Client() calls to reuse GRPC connections
+
 func (a *ArgoCdClient) GetApps() ([]Application, error) {
-	_, appClient, err := a.client.NewApplicationClient()
+	closer, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
 		return nil, a.logger.Errorf("Error creating argocd client: %v", err)
 	}
+	defer closer.Close()
 	appList, err := appClient.List(a.ctx, &application.ApplicationQuery{})
 	if err != nil {
 		return nil, a.logger.Errorf("Error getting application list: %v", err)
@@ -87,10 +99,11 @@ func (a *ArgoCdClient) GetApps() ([]Application, error) {
 }
 
 func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
-	_, appClient, err := a.client.NewApplicationClient()
+	closer, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
 		return nil, a.logger.Errorf("Error creating argocd client: %v", err)
 	}
+	defer closer.Close()
 
 	tree, err := a.GetResourceTree(appName)
 	if err != nil {
@@ -141,10 +154,11 @@ func (a *ArgoCdClient) GetAppResources(appName string) ([]Resource, error) {
 }
 
 func (a *ArgoCdClient) GetResourceTree(appName string) (*v1alpha1.ApplicationTree, error) {
-	_, appClient, err := a.client.NewApplicationClient()
+	closer, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
 		return nil, a.logger.Errorf("Error creating ArgoCD application client: %v", err)
 	}
+	defer closer.Close()
 	query := &application.ResourcesQuery{
 		ApplicationName: &appName,
 	}
@@ -156,11 +170,11 @@ func (a *ArgoCdClient) GetResourceTree(appName string) (*v1alpha1.ApplicationTre
 }
 
 func (a *ArgoCdClient) RefreshApp(appName string, refreshType string) error {
-	_, appClient, err := a.client.NewApplicationClient()
+	closer, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
-		return a.logger.Errorf("Error getting application client: %v", err)
+		return a.logger.Errorf("Error getting application client: %+v", err)
 	}
-
+	defer closer.Close()
 	_, err = appClient.Get(a.ctx, &application.ApplicationQuery{
 		Name:    &appName,
 		Refresh: &refreshType,
@@ -173,10 +187,11 @@ func (a *ArgoCdClient) RefreshApp(appName string, refreshType string) error {
 }
 
 func (a *ArgoCdClient) SyncApp(appName string) error {
-	_, appClient, err := a.client.NewApplicationClient()
+	closer, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
-		return a.logger.Errorf("Error getting application client: %v", err)
+		return a.logger.Errorf("Error getting application client: %+v", err)
 	}
+	defer closer.Close()
 	syncRequest := &application.ApplicationSyncRequest{
 		Name: &appName,
 	}
@@ -188,10 +203,11 @@ func (a *ArgoCdClient) SyncApp(appName string) error {
 }
 
 func (a *ArgoCdClient) DeleteApp(appName string) error {
-	_, appClient, err := a.client.NewApplicationClient()
+	closer, appClient, err := a.client.NewApplicationClient()
 	if err != nil {
-		return a.logger.Errorf("Error getting application client: %v", err)
+		return a.logger.Errorf("Error getting application client: %+v", err)
 	}
+	defer closer.Close()
 	deleteRequest := &application.ApplicationDeleteRequest{
 		Name: &appName,
 	}
@@ -200,4 +216,33 @@ func (a *ArgoCdClient) DeleteApp(appName string) error {
 		return a.logger.Errorf("Error deleting app %s: %v", appName, err)
 	}
 	return nil
+}
+
+// Prepare OAuth2 config and openId dsicovert provider
+func (a *ArgoCdClient) OpenIDConfig(conf *settings.Settings) (*oauth2.Config, *oidc.Provider, error) {
+	return a.client.OIDCConfig(a.ctx, conf)
+}
+
+// Get ArgoCD Settings via GET /api/v1/settings
+func (a *ArgoCdClient) GetSettings() (*settings.Settings, error) {
+	closer, settingsClient, err := a.client.NewSettingsClient()
+	if err != nil {
+		return nil, a.logger.Errorf("Error getting settings client: %+v", err)
+	}
+	defer closer.Close()
+
+	return settingsClient.Get(a.ctx, &settings.SettingsQuery{})
+}
+
+func (a *ArgoCdClient) CreateSession(username string, password string) (*session.SessionResponse, error) {
+	closer, sessionClient, err := a.client.NewSessionClient()
+	if err != nil {
+		return nil, a.logger.Errorf("Error getting session client: %+v", err)
+	}
+	defer closer.Close()
+	request := session.SessionCreateRequest{
+		Username: username,
+		Password: password,
+	}
+	return sessionClient.Create(a.ctx, &request)
 }

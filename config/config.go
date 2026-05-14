@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/Jack200062/ArguTUI/pkg/logging"
@@ -41,6 +42,12 @@ func parseConfig(v *viper.Viper) (*Config, error) {
 	if err := v.Unmarshal(&c); err != nil {
 		return nil, err
 	}
+	// set defaults
+	for _, inst := range c.Instances {
+		if inst.LoginType == "" {
+			inst.LoginType = LOGIN_TYPE_TOKEN
+		}
+	}
 	return &c, nil
 }
 
@@ -52,8 +59,9 @@ func validateConfig(c *Config) error {
 		if inst.Url == "" {
 			return errors.New("instance url is required")
 		}
-		if inst.Token == "" {
-			return errors.New("instance token is required")
+
+		if inst.LoginType != LOGIN_TYPE_TOKEN && inst.LoginType != LOGIN_TYPE_CREDENTIALS && inst.LoginType != LOGIN_TYPE_SSO {
+			return fmt.Errorf("loginType should be one of (%s, %s, %s)", LOGIN_TYPE_TOKEN, LOGIN_TYPE_CREDENTIALS, LOGIN_TYPE_SSO)
 		}
 	}
 	return nil
